@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Rian 会員記録</title>
+
+<!-- ホーム画面追加時のアイコン・表示設定 -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Rian記録" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='180' height='180' fill='%232B2B29'/%3E%3Ctext x='90' y='105' font-size='72' text-anchor='middle' fill='%23EDEAE4' font-family='serif'%3E%E4%BC%9A%3C/text%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@300;400;500;700&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body { overscroll-behavior-y: none; }
+
+  :root {
+    --rn-page: #EDEAE4;
+    --rn-card: #F4F1EA;
+    --rn-card-hover: #FFFFFF;
+    --rn-dark: #2B2B29;
+    --rn-dark-hover: #403F3A;
+    --rn-text: #2B2B29;
+    --rn-muted: #8B8478;
+    --rn-faint: #A39A89;
+    --rn-soft: #6B6459;
+    --rn-accent: #8B6F47;
+    --rn-accent-soft: #D9A566;
+    --rn-border: #DDD8CD;
+    --rn-danger: #8B4A3B;
+  }
+  .rn-app { background: var(--rn-page); color: var(--rn-text); font-family: 'Zen Kaku Gothic New', sans-serif; min-height: 100vh; }
+  .rn-serif { font-family: 'Shippori Mincho', serif; font-weight: 700; }
+  .rn-eyebrow { letter-spacing: 0.35em; color: var(--rn-faint); font-size: 11px; }
+  .rn-muted { color: var(--rn-muted); }
+  .rn-faint { color: var(--rn-faint); }
+  .rn-soft { color: var(--rn-soft); }
+  .rn-accent-text { color: var(--rn-accent); }
+  .rn-error-banner { background: var(--rn-danger); color: var(--rn-page); font-size: 14px; text-align: center; padding: 8px 16px; }
+
+  .rn-row { background: var(--rn-card); border: 1px solid var(--rn-border); transition: background-color .15s ease; border-radius: 4px; }
+  .rn-row:hover { background: var(--rn-card-hover); }
+
+  .rn-avatar { background: rgba(217,165,102,0.2); color: var(--rn-accent); width: 36px; height: 36px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  .rn-icon-btn { color: var(--rn-faint); background: transparent; border: none; cursor: pointer; transition: color .15s ease; padding: 4px; font-size: 16px; line-height: 1; }
+  .rn-icon-btn:hover { color: var(--rn-text); }
+  .rn-icon-btn.danger:hover { color: var(--rn-danger); }
+  .rn-icon-btn.accent:hover { color: var(--rn-accent); }
+
+  .rn-fab {
+    background: var(--rn-dark); color: var(--rn-page); border: none; cursor: pointer;
+    transition: background-color .15s ease; position: fixed; bottom: 32px; right: 32px;
+    width: 56px; height: 56px; border-radius: 999px; box-shadow: 0 10px 25px rgba(0,0,0,.25);
+    display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 40;
+  }
+  .rn-fab:hover { background: var(--rn-dark-hover); }
+
+  .rn-modal-backdrop { background: var(--rn-dark); position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; z-index: 50; }
+  .rn-modal-panel { background: var(--rn-page); border-radius: 4px; padding: 24px; width: 100%; max-width: 420px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+
+  .rn-field-input {
+    border: none; border-bottom: 1px solid var(--rn-border); background: transparent;
+    color: var(--rn-text); outline: none; transition: border-color .15s ease; width: 100%;
+    font-family: inherit; font-size: 15px; padding: 8px 0;
+  }
+  .rn-field-input:focus { border-color: var(--rn-accent); }
+  .rn-field-input::placeholder { color: var(--rn-faint); }
+
+  .rn-search-wrap { background: var(--rn-card); border: 1px solid var(--rn-border); border-radius: 999px; position: relative; margin-bottom: 24px; }
+  .rn-search-wrap .rn-field-input { border: none; padding: 8px 12px 8px 34px; font-size: 14px; }
+  .rn-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--rn-faint); }
+
+  .rn-btn-primary { background: var(--rn-dark); color: var(--rn-page); border: none; cursor: pointer; transition: background-color .15s ease; border-radius: 4px; padding: 10px; font-size: 15px; letter-spacing: 0.02em; width: 100%; }
+  .rn-btn-primary:hover { background: var(--rn-dark-hover); }
+
+  .rn-btn-outline { background: transparent; color: var(--rn-accent); border: 1px solid var(--rn-accent); cursor: pointer; transition: background-color .15s ease; border-radius: 4px; padding: 10px; font-size: 15px; width: 100%; }
+  .rn-btn-outline:hover { background: #FFFFFF; }
+
+  .rn-chip { background: transparent; color: var(--rn-soft); border: 1px solid var(--rn-border); cursor: pointer; transition: all .15s ease; border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  .rn-chip:hover { border-color: var(--rn-accent); }
+  .rn-chip.active { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+
+  .rn-fav-chip { background: transparent; color: var(--rn-accent); border: 1px solid rgba(217,165,102,0.5); cursor: pointer; transition: all .15s ease; border-radius: 999px; padding: 6px 12px; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; }
+  .rn-fav-chip:hover { border-color: var(--rn-accent); }
+  .rn-fav-chip.active { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+
+  .rn-tag { color: var(--rn-accent); background: rgba(217,165,102,0.15); font-size: 10px; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 3px; }
+  .rn-divider { background: var(--rn-border); height: 1px; flex: 1; }
+
+  .rn-tab { color: var(--rn-faint); border-bottom: 2px solid transparent; background: transparent; cursor: pointer; transition: all .15s ease; display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 14px; margin-bottom: -1px; }
+  .rn-tab:hover { color: var(--rn-soft); }
+  .rn-tab.active { color: var(--rn-text); border-color: var(--rn-accent); }
+
+  .rn-cal-cell { color: var(--rn-soft); border: 1px solid transparent; background: transparent; cursor: pointer; transition: background-color .15s ease; aspect-ratio: 1; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; }
+  .rn-cal-cell:hover { background: var(--rn-card); }
+  .rn-cal-cell.has { background: rgba(217,165,102,0.15); border-color: rgba(217,165,102,0.4); color: var(--rn-text); }
+  .rn-cal-cell.picked { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+  .rn-cal-dot { background: var(--rn-accent); width: 4px; height: 4px; border-radius: 999px; margin-top: 2px; }
+
+  .rn-select { background: var(--rn-card); border: 1px solid var(--rn-border); color: var(--rn-text); border-radius: 4px; padding: 8px 12px; width: 100%; font-family: inherit; font-size: 15px; }
+
+  .rn-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+"use strict";
+const { useState, useEffect, useMemo } = React;
+// ---- localStorage をベースにした保存API(Claude環境のwindow.storageと同じ形に合わせる) ----
+const storage = {
+    async get(key) {
+        const v = window.localStorage.getItem(key);
+        return v === null ? null : { key, value: v };
+    },
+    async set(key, value) {
+        window.localStorage.setItem(key, value);
+        return { key, value };
+    },
+};
+// ---- 部位 -> 種目 マスタ ----
+const BODY_PARTS = {
+    "胸": ["ベンチプレス", "インクラインベンチプレス", "ダンベルフライ", "チェストプレス", "ペックフライ"],
+    "背中": ["ラットプルダウン", "デッドリフト", "ベントオーバーロウ", "シーテッドロウ", "プルアップ"],
+    "脚": ["スクワット", "レッグプレス", "レッグエクステンション", "レッグカール", "ランジ"],
+    "肩": ["ショルダープレス", "サイドレイズ", "フロントレイズ", "リアレイズ", "アップライトロウ"],
+    "腕": ["アームカール", "トライセプスエクステンション", "ハンマーカール", "ディップス"],
+    "腹": ["クランチ", "レッグレイズ", "プランク", "ロシアンツイスト"],
+    "その他": ["自由入力"],
+};
+const PART_ORDER = Object.keys(BODY_PARTS);
+const PLAN_OPTIONS = ["トライアル", "スタンダード", "スペシャル", "継続8回", "継続16回", "継続24回"];
+function partOfExercise(name) {
+    for (const p of PART_ORDER) {
+        if (BODY_PARTS[p].includes(name))
+            return p;
+    }
+    return "その他";
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function formatDateJP(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const w = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+    return `${d.getMonth() + 1}月${d.getDate()}日(${w})`;
+}
+function formatDateShort(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+function Icon({ children, size }) {
+    return React.createElement("span", { style: { fontSize: size || 16, lineHeight: 1, display: "inline-block" } }, children);
+}
+function App() {
+    const [members, setMembers] = useState(null);
+    const [selectedId, setSelectedId] = useState(null);
+    const [records, setRecords] = useState({});
+    const [loadedRecordIds, setLoadedRecordIds] = useState({});
+    const [favorites, setFavorites] = useState([]);
+    const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+    const [showAddMember, setShowAddMember] = useState(false);
+    const [newMemberName, setNewMemberName] = useState("");
+    const [formState, setFormState] = useState(null);
+    const [saveError, setSaveError] = useState(false);
+    const [activeTab, setActiveTab] = useState("log");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [memberSection, setMemberSection] = useState(null); // null | 'training' | 'body'
+    const [bodyRecords, setBodyRecords] = useState({});
+    const [loadedBodyIds, setLoadedBodyIds] = useState({});
+    const [bodyFormState, setBodyFormState] = useState(null);
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await storage.get("rian:members");
+                setMembers(res ? JSON.parse(res.value) : []);
+            }
+            catch (_a) {
+                setMembers([]);
+            }
+            try {
+                const fav = await storage.get("rian:favorites");
+                setFavorites(fav ? JSON.parse(fav.value) : []);
+            }
+            catch (_b) {
+                setFavorites([]);
+            }
+            setFavoritesLoaded(true);
+        })();
+    }, []);
+    const persistMembers = async (next) => {
+        setMembers(next);
+        try {
+            await storage.set("rian:members", JSON.stringify(next));
+        }
+        catch (_a) {
+            setSaveError(true);
+        }
+    };
+    const persistFavorites = async (next) => {
+        setFavorites(next);
+        try {
+            await storage.set("rian:favorites", JSON.stringify(next));
+        }
+        catch (_a) {
+            setSaveError(true);
+        }
+    };
+    const toggleFavorite = (exerciseName) => {
+        const next = favorites.includes(exerciseName) ? favorites.filter((f) => f !== exerciseName) : [...favorites, exerciseName];
+        persistFavorites(next);
+    };
+    const loadRecords = async (memberId) => {
+        if (loadedRecordIds[memberId])
+            return;
+        try {
+            const res = await storage.get(`rian:records:${memberId}`);
+            setRecords((prev) => ({ ...prev, [memberId]: res ? JSON.parse(res.value) : [] }));
+        }
+        catch (_a) {
+            setRecords((prev) => ({ ...prev, [memberId]: [] }));
+        }
+        setLoadedRecordIds((prev) => ({ ...prev, [memberId]: true }));
+    };
+    const persistRecords = async (memberId, next) => {
+        setRecords((prev) => ({ ...prev, [memberId]: next }));
+        try {
+            await storage.set(`rian:records:${memberId}`, JSON.stringify(next));
+        }
+        catch (_a) {
+            setSaveError(true);
+        }
+    };
+    const loadBodyRecords = async (memberId) => {
+        if (loadedBodyIds[memberId])
+            return;
+        try {
+            const res = await storage.get(`rian:body:${memberId}`);
+            setBodyRecords((prev) => ({ ...prev, [memberId]: res ? JSON.parse(res.value) : [] }));
+        }
+        catch (_a) {
+            setBodyRecords((prev) => ({ ...prev, [memberId]: [] }));
+        }
+        setLoadedBodyIds((prev) => ({ ...prev, [memberId]: true }));
+    };
+    const persistBodyRecords = async (memberId, next) => {
+        setBodyRecords((prev) => ({ ...prev, [memberId]: next }));
+        try {
+            await storage.set(`rian:body:${memberId}`, JSON.stringify(next));
+        }
+        catch (_a) {
+            setSaveError(true);
+        }
+    };
+    const saveBodyRecord = (data) => {
+        const list = bodyRecords[selectedId] || [];
+        let next;
+        if ((bodyFormState === null || bodyFormState === void 0 ? void 0 : bodyFormState.mode) === "edit") {
+            next = list.map((r) => (r.id === bodyFormState.record.id ? { ...data, id: r.id } : r));
+        }
+        else {
+            next = [{ ...data, id: uid() }, ...list];
+        }
+        next.sort((a, b) => (a.date < b.date ? 1 : -1));
+        persistBodyRecords(selectedId, next);
+        setBodyFormState(null);
+    };
+    const deleteBodyRecord = (recordId) => {
+        const next = (bodyRecords[selectedId] || []).filter((r) => r.id !== recordId);
+        persistBodyRecords(selectedId, next);
+    };
+    const selectMember = (id) => {
+        setSelectedId(id);
+        setMemberSection(null);
+        setActiveTab("log");
+        setSearchQuery("");
+        loadRecords(id);
+        loadBodyRecords(id);
+    };
+    const addMember = () => {
+        const name = newMemberName.trim();
+        if (!name)
+            return;
+        persistMembers([...members, { id: uid(), name }]);
+        setNewMemberName("");
+        setShowAddMember(false);
+    };
+    const deleteMember = (id) => {
+        if (!confirm("この会員さんを削除しますか?記録も削除されます。"))
+            return;
+        persistMembers(members.filter((m) => m.id !== id));
+        if (selectedId === id)
+            setSelectedId(null);
+    };
+    const saveRecord = (data, { continueAdding } = {}) => {
+        const list = records[selectedId] || [];
+        let next;
+        if ((formState === null || formState === void 0 ? void 0 : formState.mode) === "edit") {
+            next = list.map((r) => (r.id === formState.record.id ? { ...data, id: r.id } : r));
+        }
+        else {
+            next = [{ ...data, id: uid() }, ...list];
+        }
+        next.sort((a, b) => (a.date < b.date ? 1 : -1));
+        persistRecords(selectedId, next);
+        if (continueAdding)
+            setFormState({ mode: "add", keepDate: data.date });
+        else
+            setFormState(null);
+    };
+    const deleteRecord = (recordId) => {
+        const next = (records[selectedId] || []).filter((r) => r.id !== recordId);
+        persistRecords(selectedId, next);
+    };
+    const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
+    const memberRecords = records[selectedId] || [];
+    const memberBodyRecords = bodyRecords[selectedId] || [];
+    if (members === null || !favoritesLoaded) {
+        return React.createElement("div", { className: "rn-app rn-loading" },
+            React.createElement("p", { className: "rn-faint", style: { fontWeight: 300 } }, "\u8AAD\u307F\u8FBC\u307F\u4E2D..."));
+    }
+    return (React.createElement("div", { className: "rn-app" },
+        saveError && React.createElement("div", { className: "rn-error-banner" }, "\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u30D6\u30E9\u30A6\u30B6\u306E\u8A2D\u5B9A\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"),
+        !selectedMember && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("header", { style: { marginBottom: 40, textAlign: "center" } },
+                React.createElement("p", { className: "rn-eyebrow" }, "RIAN TRAINING LOG"),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 30 } }, "\u4F1A\u54E1\u8A18\u9332")),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                members.length === 0 && (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "64px 0", fontWeight: 300 } },
+                    "\u307E\u3060\u4F1A\u54E1\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+                    React.createElement("br", null),
+                    "\u53F3\u4E0B\u306E\uFF0B\u304B\u3089\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002")),
+                members.map((m) => (React.createElement("button", { key: m.id, onClick: () => selectMember(m.id), className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
+                    React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 12 } },
+                        React.createElement("span", { className: "rn-avatar" },
+                            React.createElement(Icon, null, "\uD83D\uDC64")),
+                        React.createElement("span", { style: { fontSize: 15, letterSpacing: "0.02em" } }, m.name)),
+                    React.createElement("span", { onClick: (e) => { e.stopPropagation(); deleteMember(m.id); }, className: "rn-icon-btn danger" },
+                        React.createElement(Icon, { size: 15 }, "\uD83D\uDDD1")))))),
+            React.createElement("button", { onClick: () => setShowAddMember(true), className: "rn-fab", "aria-label": "\u4F1A\u54E1\u3092\u8FFD\u52A0" },
+                React.createElement(Icon, { size: 26 }, "\uFF0B")),
+            showAddMember && (React.createElement(Modal, { onClose: () => setShowAddMember(false), title: "\u4F1A\u54E1\u3092\u8FFD\u52A0" },
+                React.createElement("input", { autoFocus: true, value: newMemberName, onChange: (e) => setNewMemberName(e.target.value), onKeyDown: (e) => e.key === "Enter" && addMember(), placeholder: "\u304A\u540D\u524D", className: "rn-field-input" }),
+                React.createElement("button", { onClick: addMember, className: "rn-btn-primary", style: { marginTop: 24 } }, "\u8FFD\u52A0\u3059\u308B"))))),
+        selectedMember && memberSection === null && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 32 } },
+                React.createElement("button", { onClick: () => setSelectedId(null), className: "rn-icon-btn", "aria-label": "\u4E00\u89A7\u306B\u623B\u308B" },
+                    React.createElement(Icon, { size: 22 }, "\u2039")),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } },
+                    selectedMember.name,
+                    " \u3055\u3093")),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+                React.createElement("button", { onClick: () => setMemberSection("training"), className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
+                    React.createElement("span", { className: "rn-avatar", style: { width: 44, height: 44, fontSize: 20 } },
+                        React.createElement(Icon, null, "\uD83C\uDFCB")),
+                    React.createElement("span", null,
+                        React.createElement("span", { style: { display: "block", fontSize: 16, letterSpacing: "0.02em", marginBottom: 2 } }, "\u30C8\u30EC\u30FC\u30CB\u30F3\u30B0\u8A18\u9332"),
+                        React.createElement("span", { className: "rn-muted", style: { display: "block", fontSize: 14 } }, "\u7A2E\u76EE\u30FB\u91CD\u91CF\u30FB\u56DE\u6570\u306A\u3069\u3092\u8A18\u9332\u3059\u308B"))),
+                React.createElement("button", { onClick: () => setMemberSection("body"), className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
+                    React.createElement("span", { className: "rn-avatar", style: { width: 44, height: 44, fontSize: 20 } },
+                        React.createElement(Icon, null, "\uD83D\uDC64")),
+                    React.createElement("span", null,
+                        React.createElement("span", { style: { display: "block", fontSize: 16, letterSpacing: "0.02em", marginBottom: 2 } }, "\u4F53\u7D44\u6210\u8A18\u9332"),
+                        React.createElement("span", { className: "rn-muted", style: { display: "block", fontSize: 14 } }, "\u4F53\u91CD\u30FB\u4F53\u8102\u80AA\u7387\u306A\u3069\u3092\u8A18\u9332\u3059\u308B")))))),
+        selectedMember && memberSection === "training" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 24 } },
+                React.createElement("button", { onClick: () => setMemberSection(null), className: "rn-icon-btn", "aria-label": "\u623B\u308B" },
+                    React.createElement(Icon, { size: 22 }, "\u2039")),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } },
+                    selectedMember.name,
+                    " \u3055\u3093\u30FB\u30C8\u30EC\u30FC\u30CB\u30F3\u30B0")),
+            React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--rn-border)" } },
+                React.createElement("button", { className: `rn-tab ${activeTab === "log" ? "active" : ""}`, onClick: () => setActiveTab("log") },
+                    React.createElement(Icon, { size: 14 }, "\u2261"),
+                    "\u8A18\u9332"),
+                React.createElement("button", { className: `rn-tab ${activeTab === "trend" ? "active" : ""}`, onClick: () => setActiveTab("trend") },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDCC8"),
+                    "\u63A8\u79FB"),
+                React.createElement("button", { className: `rn-tab ${activeTab === "calendar" ? "active" : ""}`, onClick: () => setActiveTab("calendar") },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
+                    "\u30AB\u30EC\u30F3\u30C0\u30FC")),
+            activeTab === "log" && (React.createElement(LogTab, { records: memberRecords, searchQuery: searchQuery, setSearchQuery: setSearchQuery, onEdit: (r) => setFormState({ mode: "edit", record: r }), onDelete: deleteRecord })),
+            activeTab === "trend" && React.createElement(TrendTab, { records: memberRecords }),
+            activeTab === "calendar" && React.createElement(CalendarTab, { records: memberRecords }),
+            React.createElement("button", { onClick: () => setFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
+                React.createElement(Icon, { size: 26 }, "\uFF0B")),
+            formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, lastRecordFor: (exercise) => {
+                    const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date < b.date ? 1 : -1));
+                    return past[0] || null;
+                }, onCancel: () => setFormState(null), onSave: saveRecord })))),
+        selectedMember && memberSection === "body" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 24 } },
+                React.createElement("button", { onClick: () => setMemberSection(null), className: "rn-icon-btn", "aria-label": "\u623B\u308B" },
+                    React.createElement(Icon, { size: 22 }, "\u2039")),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } },
+                    selectedMember.name,
+                    " \u3055\u3093\u30FB\u4F53\u7D44\u6210")),
+            React.createElement(BodyLogTab, { records: memberBodyRecords, onEdit: (r) => setBodyFormState({ mode: "edit", record: r }), onDelete: deleteBodyRecord }),
+            React.createElement("button", { onClick: () => setBodyFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u4F53\u7D44\u6210\u3092\u8FFD\u52A0" },
+                React.createElement(Icon, { size: 26 }, "\uFF0B")),
+            bodyFormState && (React.createElement(BodyForm, { mode: bodyFormState.mode, initial: bodyFormState.record, onCancel: () => setBodyFormState(null), onSave: saveBodyRecord })))),
+        React.createElement("style", null, `.rn-pad { padding: 32px 24px 112px; }`)));
+}
+function Modal({ title, onClose, children }) {
+    return (React.createElement("div", { className: "rn-modal-backdrop", onClick: onClose },
+        React.createElement("div", { className: "rn-modal-panel", onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+                React.createElement("h2", { className: "rn-serif", style: { fontSize: 18 } }, title),
+                React.createElement("button", { onClick: onClose, className: "rn-icon-btn" },
+                    React.createElement(Icon, { size: 18 }, "\u2715"))),
+            children)));
+}
+function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete }) {
+    const filtered = useMemo(() => {
+        const q = searchQuery.trim();
+        if (!q)
+            return records;
+        return records.filter((r) => r.exercise.includes(q) || r.part.includes(q));
+    }, [records, searchQuery]);
+    const grouped = useMemo(() => {
+        const map = new Map();
+        for (const r of filtered) {
+            if (!map.has(r.date))
+                map.set(r.date, []);
+            map.get(r.date).push(r);
+        }
+        return Array.from(map.entries());
+    }, [filtered]);
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "rn-search-wrap" },
+            React.createElement("span", { className: "rn-search-icon" },
+                React.createElement(Icon, { size: 15 }, "\uD83D\uDD0D")),
+            React.createElement("input", { value: searchQuery, onChange: (e) => setSearchQuery(e.target.value), placeholder: "\u7A2E\u76EE\u540D\u3067\u7D5E\u308A\u8FBC\u307F", className: "rn-field-input" })),
+        grouped.length === 0 && (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, searchQuery ? "該当する記録がありません。" : React.createElement(React.Fragment, null,
+            "\u307E\u3060\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002",
+            React.createElement("br", null),
+            "\u53F3\u4E0B\u306E\uFF0B\u304B\u3089\u8A18\u9332\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002"))),
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 32 } }, grouped.map(([date, items]) => {
+            const sessionInfo = items.find((r) => r.planType && r.sessionCount);
+            return (React.createElement("div", { key: date },
+                React.createElement("div", { style: { marginBottom: 12 } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                        React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
+                        React.createElement("span", { className: "rn-soft", style: { fontSize: 14, letterSpacing: "0.02em", whiteSpace: "nowrap" } }, formatDateJP(date)),
+                        sessionInfo && (React.createElement("span", { className: "rn-tag", style: { fontSize: 11, whiteSpace: "nowrap" } },
+                            sessionInfo.planType,
+                            sessionInfo.sessionCount,
+                            "\u56DE\u76EE"))),
+                    React.createElement("div", { className: "rn-divider", style: { marginTop: 8, flex: "none" } })),
+                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 } },
+                        React.createElement("div", null,
+                            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+                                React.createElement("span", { className: "rn-tag" }, r.part),
+                                React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
+                            React.createElement("div", { className: "rn-soft", style: { fontSize: 14, display: "flex", flexWrap: "wrap", gap: "0 12px" } },
+                                React.createElement("span", null,
+                                    r.weight,
+                                    "kg"),
+                                React.createElement("span", null,
+                                    r.reps,
+                                    "\u56DE"),
+                                React.createElement("span", null,
+                                    r.sets,
+                                    "\u30BB\u30C3\u30C8"),
+                                r.assist ? React.createElement("span", null,
+                                    "\u88DC\u52A9",
+                                    r.assist,
+                                    "\u56DE") : null),
+                            r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
+                                React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
+                                React.createElement("span", null, r.note)))),
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4, flexShrink: 0 } },
+                            React.createElement("button", { onClick: () => onEdit(r), className: "rn-icon-btn accent", "aria-label": "\u7DE8\u96C6" },
+                                React.createElement(Icon, { size: 14 }, "\u270E")),
+                            React.createElement("button", { onClick: () => onDelete(r.id), className: "rn-icon-btn danger", "aria-label": "\u524A\u9664" },
+                                React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1"))))))))));
+        }))));
+}
+function MiniLineChart({ data }) {
+    const width = 100, height = 100, pad = 8;
+    const values = data.map((d) => d.重量);
+    const min = Math.min(...values), max = Math.max(...values);
+    const range = max - min || 1;
+    const points = data.map((d, i) => {
+        const x = pad + (i / (data.length - 1)) * (width - pad * 2);
+        const y = height - pad - ((d.重量 - min) / range) * (height - pad * 2);
+        return `${x},${y}`;
+    });
+    return (React.createElement("div", null,
+        React.createElement("svg", { viewBox: `0 0 ${width} ${height}`, style: { width: "100%", height: 220 }, preserveAspectRatio: "none" },
+            React.createElement("polyline", { points: points.join(" "), fill: "none", stroke: "#8B6F47", strokeWidth: "1.2", vectorEffect: "non-scaling-stroke" }),
+            points.map((p, i) => {
+                const [x, y] = p.split(",");
+                return React.createElement("circle", { key: i, cx: x, cy: y, r: "1.4", fill: "#8B6F47", vectorEffect: "non-scaling-stroke" });
+            })),
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12 }, className: "rn-faint" },
+            React.createElement("span", null, data[0].date),
+            React.createElement("span", null, data[data.length - 1].date)),
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }, className: "rn-soft" },
+            React.createElement("span", null,
+                "\u6700\u5C0F ",
+                min,
+                "kg"),
+            React.createElement("span", null,
+                "\u6700\u5927 ",
+                max,
+                "kg"))));
+}
+function TrendTab({ records }) {
+    const exerciseNames = useMemo(() => Array.from(new Set(records.map((r) => r.exercise))), [records]);
+    const [selected, setSelected] = useState(exerciseNames[0] || "");
+    useEffect(() => { if (!exerciseNames.includes(selected))
+        setSelected(exerciseNames[0] || ""); }, [exerciseNames]); // eslint-disable-line
+    const data = useMemo(() => records.filter((r) => r.exercise === selected).slice()
+        .sort((a, b) => (a.date > b.date ? 1 : -1)).map((r) => ({ date: formatDateShort(r.date), 重量: parseFloat(r.weight) || 0 })), [records, selected]);
+    if (exerciseNames.length === 0)
+        return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u8A18\u9332\u304C\u5897\u3048\u308B\u3068\u3001\u3053\u3053\u306B\u91CD\u91CF\u306E\u63A8\u79FB\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002");
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { marginBottom: 24 } },
+            React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u7A2E\u76EE\u3092\u9078\u629E"),
+            React.createElement("select", { value: selected, onChange: (e) => setSelected(e.target.value), className: "rn-select" }, exerciseNames.map((ex) => React.createElement("option", { key: ex, value: ex }, ex)))),
+        data.length < 2 ? (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "64px 0", fontWeight: 300 } }, "\u8A18\u9332\u304C2\u4EF6\u4EE5\u4E0A\u306B\u306A\u308B\u3068\u30B0\u30E9\u30D5\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002")) : (React.createElement("div", { className: "rn-row", style: { padding: 16 } },
+            React.createElement(MiniLineChart, { data: data })))));
+}
+function CalendarTab({ records }) {
+    const [month, setMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+    const [pickedDate, setPickedDate] = useState(null);
+    const daysWithRecords = useMemo(() => new Set(records.map((r) => r.date)), [records]);
+    const firstDay = new Date(month.y, month.m, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(month.y, month.m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startWeekday; i++)
+        cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++)
+        cells.push(d);
+    const dateStrFor = (d) => `${month.y}-${String(month.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const pickedRecords = pickedDate ? records.filter((r) => r.date === pickedDate) : [];
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+            React.createElement("button", { onClick: () => setMonth((s) => (s.m === 0 ? { y: s.y - 1, m: 11 } : { y: s.y, m: s.m - 1 })), className: "rn-icon-btn" },
+                React.createElement(Icon, { size: 18 }, "\u2039")),
+            React.createElement("span", { className: "rn-serif" },
+                month.y,
+                "\u5E74 ",
+                month.m + 1,
+                "\u6708"),
+            React.createElement("button", { onClick: () => setMonth((s) => (s.m === 11 ? { y: s.y + 1, m: 0 } : { y: s.y, m: s.m + 1 })), className: "rn-icon-btn" },
+                React.createElement(Icon, { size: 18 }, "\u203A"))),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, textAlign: "center", fontSize: 12, marginBottom: 8 }, className: "rn-faint" }, ["日", "月", "火", "水", "木", "金", "土"].map((w) => React.createElement("div", { key: w }, w))),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 } }, cells.map((d, i) => {
+            if (d === null)
+                return React.createElement("div", { key: i });
+            const ds = dateStrFor(d);
+            const has = daysWithRecords.has(ds);
+            const isPicked = pickedDate === ds;
+            return (React.createElement("button", { key: i, onClick: () => setPickedDate(isPicked ? null : ds), className: `rn-cal-cell ${has ? "has" : ""} ${isPicked ? "picked" : ""}` },
+                d,
+                has && !isPicked && React.createElement("span", { className: "rn-cal-dot" })));
+        })),
+        pickedDate && (React.createElement("div", { style: { marginTop: 24 } },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 12 } },
+                React.createElement("span", { className: "rn-soft", style: { fontSize: 14 } }, formatDateJP(pickedDate)),
+                React.createElement("div", { className: "rn-divider" })),
+            pickedRecords.length === 0 ? (React.createElement("p", { className: "rn-faint", style: { fontSize: 14, fontWeight: 300 } }, "\u3053\u306E\u65E5\u306E\u8A18\u9332\u306F\u3042\u308A\u307E\u305B\u3093\u3002")) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, pickedRecords.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+                    React.createElement("span", { className: "rn-tag" }, r.part),
+                    React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
+                React.createElement("div", { className: "rn-soft", style: { fontSize: 14, display: "flex", flexWrap: "wrap", gap: "0 12px" } },
+                    React.createElement("span", null,
+                        r.weight,
+                        "kg"),
+                    React.createElement("span", null,
+                        r.reps,
+                        "\u56DE"),
+                    React.createElement("span", null,
+                        r.sets,
+                        "\u30BB\u30C3\u30C8"),
+                    r.assist ? React.createElement("span", null,
+                        "\u88DC\u52A9",
+                        r.assist,
+                        "\u56DE") : null))))))))));
+}
+const BODY_FIELDS = [
+    { key: "weight", label: "体重", unit: "kg" },
+    { key: "bodyFat", label: "体脂肪率", unit: "%" },
+    { key: "muscleMass", label: "骨格筋肉量", unit: "kg" },
+    { key: "visceralFat", label: "内臓脂肪レベル", unit: "" },
+    { key: "chest", label: "胸囲", unit: "cm" },
+    { key: "waist", label: "腹囲", unit: "cm" },
+    { key: "hip", label: "臀部", unit: "cm" },
+    { key: "thigh", label: "大腿", unit: "cm" },
+];
+function BodyLogTab({ records, onEdit, onDelete }) {
+    if (records.length === 0) {
+        return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } },
+            "\u307E\u3060\u4F53\u7D44\u6210\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002",
+            React.createElement("br", null),
+            "\u53F3\u4E0B\u306E\uFF0B\u304B\u3089\u8A18\u9332\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+    }
+    return (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } }, records.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+        React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 } },
+            React.createElement("div", { style: { flex: 1 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                    React.createElement(Icon, { size: 13 }, "\uD83D\uDCC5"),
+                    React.createElement("span", { className: "rn-soft", style: { fontSize: 14 } }, formatDateJP(r.date))),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 16, rowGap: 4, fontSize: 14 } }, BODY_FIELDS.map((f) => r[f.key] ? (React.createElement("div", { key: f.key, style: { display: "flex", justifyContent: "space-between" } },
+                    React.createElement("span", { className: "rn-muted" }, f.label),
+                    React.createElement("span", null,
+                        r[f.key],
+                        f.unit))) : null))),
+            React.createElement("div", { style: { display: "flex", gap: 4, flexShrink: 0 } },
+                React.createElement("button", { onClick: () => onEdit(r), className: "rn-icon-btn accent", "aria-label": "\u7DE8\u96C6" },
+                    React.createElement(Icon, { size: 14 }, "\u270E")),
+                React.createElement("button", { onClick: () => onDelete(r.id), className: "rn-icon-btn danger", "aria-label": "\u524A\u9664" },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1")))))))));
+}
+function BodyForm({ mode, initial, onCancel, onSave }) {
+    const isEdit = mode === "edit";
+    const [date, setDate] = useState((initial === null || initial === void 0 ? void 0 : initial.date) || todayStr());
+    const [values, setValues] = useState(() => {
+        const init = {};
+        BODY_FIELDS.forEach((f) => { init[f.key] = (initial === null || initial === void 0 ? void 0 : initial[f.key]) || ""; });
+        return init;
+    });
+    const setField = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
+    const handleSave = () => { if (!date)
+        return; onSave({ date, ...values }); };
+    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onCancel },
+        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+                React.createElement("h2", { className: "rn-serif", style: { fontSize: 18, display: "flex", alignItems: "center", gap: 8 } },
+                    React.createElement(Icon, { size: 17 }, "\uD83D\uDC64"),
+                    isEdit ? "体組成を編集" : "体組成を追加"),
+                React.createElement("button", { onClick: onCancel, className: "rn-icon-btn" },
+                    React.createElement(Icon, { size: 18 }, "\u2715"))),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 20 } },
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u65E5\u4ED8"),
+                    React.createElement("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: "rn-field-input" })),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } }, BODY_FIELDS.map((f) => (React.createElement(NumField, { key: f.key, label: `${f.label}${f.unit ? `(${f.unit})` : ""}`, value: values[f.key], onChange: (v) => setField(f.key, v) })))),
+                React.createElement("button", { onClick: handleSave, className: "rn-btn-primary", style: { marginTop: 8 } }, isEdit ? "更新する" : "保存する")))));
+}
+function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, lastRecordFor, onCancel, onSave }) {
+    const isEdit = mode === "edit";
+    const [date, setDate] = useState((initial === null || initial === void 0 ? void 0 : initial.date) || defaultDate || todayStr());
+    const [part, setPart] = useState(initial ? partOfExercise(initial.exercise) : PART_ORDER[0]);
+    const [exercise, setExercise] = useState((initial === null || initial === void 0 ? void 0 : initial.exercise) || BODY_PARTS[PART_ORDER[0]][0]);
+    const [customExercise, setCustomExercise] = useState(initial && partOfExercise(initial.exercise) === "その他" ? initial.exercise : "");
+    const [weight, setWeight] = useState((initial === null || initial === void 0 ? void 0 : initial.weight) || "");
+    const [reps, setReps] = useState((initial === null || initial === void 0 ? void 0 : initial.reps) || "");
+    const [sets, setSets] = useState((initial === null || initial === void 0 ? void 0 : initial.sets) || "");
+    const [assist, setAssist] = useState((initial === null || initial === void 0 ? void 0 : initial.assist) || "");
+    const [note, setNote] = useState((initial === null || initial === void 0 ? void 0 : initial.note) || "");
+    const [planType, setPlanType] = useState((initial === null || initial === void 0 ? void 0 : initial.planType) || "");
+    const [sessionCount, setSessionCount] = useState((initial === null || initial === void 0 ? void 0 : initial.sessionCount) || "");
+    const isOther = part === "その他";
+    const exerciseOptions = BODY_PARTS[part];
+    const finalExercise = isOther ? customExercise.trim() : exercise;
+    const last = finalExercise ? lastRecordFor(finalExercise) : null;
+    const handlePartChange = (p) => { setPart(p); setExercise(BODY_PARTS[p][0]); };
+    const pickFavorite = (name) => {
+        const p = partOfExercise(name);
+        setPart(p);
+        if (p === "その他")
+            setCustomExercise(name);
+        else
+            setExercise(name);
+    };
+    const validate = () => finalExercise && weight && reps && sets;
+    const buildData = () => ({
+        date, part, exercise: finalExercise, weight, reps, sets, assist: assist || "", note: note.trim(),
+        planType: planType || "", sessionCount: sessionCount || "",
+    });
+    const handleSave = (continueAdding) => {
+        if (!validate())
+            return;
+        onSave(buildData(), { continueAdding });
+        if (continueAdding) {
+            setExercise(BODY_PARTS[PART_ORDER[0]][0]);
+            setPart(PART_ORDER[0]);
+            setCustomExercise("");
+            setWeight("");
+            setReps("");
+            setSets("");
+            setAssist("");
+            setNote("");
+        }
+    };
+    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onCancel },
+        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+                React.createElement("h2", { className: "rn-serif", style: { fontSize: 18, display: "flex", alignItems: "center", gap: 8 } },
+                    React.createElement(Icon, { size: 17 }, "\uD83C\uDFCB"),
+                    isEdit ? "記録を編集" : "記録を追加"),
+                React.createElement("button", { onClick: onCancel, className: "rn-icon-btn" },
+                    React.createElement(Icon, { size: 18 }, "\u2715"))),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 20 } },
+                favorites.length > 0 && (React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u304A\u6C17\u306B\u5165\u308A"),
+                    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, favorites.map((f) => (React.createElement("button", { key: f, onClick: () => pickFavorite(f), className: `rn-fav-chip ${finalExercise === f ? "active" : ""}` },
+                        React.createElement(Icon, { size: 11 }, "\u2605"),
+                        f)))))),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u65E5\u4ED8"),
+                    React.createElement("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: "rn-field-input" })),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u56DE\u6570"),
+                    React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+                        React.createElement("div", null,
+                            React.createElement("label", { className: "rn-faint", style: { fontSize: 11, display: "block", marginBottom: 4 } }, "\u30D7\u30E9\u30F3"),
+                            React.createElement("select", { value: planType, onChange: (e) => setPlanType(e.target.value), className: "rn-field-input" },
+                                React.createElement("option", { value: "" }, "\u9078\u629E\u306A\u3057"),
+                                PLAN_OPTIONS.map((p) => React.createElement("option", { key: p, value: p }, p)))),
+                        React.createElement("div", null,
+                            React.createElement("label", { className: "rn-faint", style: { fontSize: 11, display: "block", marginBottom: 4 } }, "\u56DE\u6570"),
+                            React.createElement("input", { type: "number", inputMode: "numeric", value: sessionCount, onChange: (e) => setSessionCount(e.target.value), className: "rn-field-input" }))),
+                    planType && sessionCount && (React.createElement("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 6 } },
+                        "\u8868\u793A: ",
+                        planType,
+                        sessionCount,
+                        "\u56DE\u76EE"))),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u90E8\u4F4D"),
+                    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, PART_ORDER.map((p) => (React.createElement("button", { key: p, onClick: () => handlePartChange(p), className: `rn-chip ${part === p ? "active" : ""}` }, p))))),
+                React.createElement("div", null,
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 } },
+                        React.createElement("label", { className: "rn-muted", style: { fontSize: 12 } }, "\u7A2E\u76EE"),
+                        finalExercise && (React.createElement("button", { onClick: () => onToggleFavorite(finalExercise), className: "rn-icon-btn accent", style: { display: "flex", alignItems: "center", gap: 4, fontSize: 12 } },
+                            React.createElement(Icon, { size: 13 }, favorites.includes(finalExercise) ? "★" : "☆"),
+                            "\u304A\u6C17\u306B\u5165\u308A"))),
+                    isOther ? (React.createElement("input", { value: customExercise, onChange: (e) => setCustomExercise(e.target.value), placeholder: "\u7A2E\u76EE\u540D\u3092\u5165\u529B", className: "rn-field-input" })) : (React.createElement("select", { value: exercise, onChange: (e) => setExercise(e.target.value), className: "rn-field-input" }, exerciseOptions.map((ex) => React.createElement("option", { key: ex, value: ex }, ex)))),
+                    last && (React.createElement("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 6 } },
+                        "\u524D\u56DE(",
+                        formatDateShort(last.date),
+                        "): ",
+                        last.weight,
+                        "kg \u00D7 ",
+                        last.reps,
+                        "\u56DE \u00D7 ",
+                        last.sets,
+                        "\u30BB\u30C3\u30C8"))),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 } },
+                    React.createElement(NumField, { label: "\u91CD\u91CF(kg)", value: weight, onChange: setWeight }),
+                    React.createElement(NumField, { label: "\u56DE\u6570", value: reps, onChange: setReps }),
+                    React.createElement(NumField, { label: "\u30BB\u30C3\u30C8\u6570", value: sets, onChange: setSets })),
+                React.createElement(NumField, { label: "\u88DC\u52A9\u56DE\u6570(\u4EFB\u610F)", value: assist, onChange: setAssist }),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u5099\u8003"),
+                    React.createElement("textarea", { value: note, onChange: (e) => setNote(e.target.value), rows: 2, placeholder: "\u30D5\u30A9\u30FC\u30E0\u306E\u69D8\u5B50\u3001\u4F53\u8ABF\u306A\u3069", className: "rn-field-input", style: { resize: "none" } })),
+                isEdit ? (React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary", style: { marginTop: 8 } }, "\u66F4\u65B0\u3059\u308B")) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
+                    React.createElement("button", { onClick: () => handleSave(true), className: "rn-btn-outline" }, "\u4FDD\u5B58\u3057\u3066\u3082\u30461\u4EF6\u8A18\u9332\u3059\u308B"),
+                    React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary" }, "\u4FDD\u5B58\u3057\u3066\u9589\u3058\u308B")))))));
+}
+function NumField({ label, value, onChange }) {
+    return (React.createElement("div", null,
+        React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, label),
+        React.createElement("input", { type: "number", inputMode: "decimal", value: value, onChange: (e) => onChange(e.target.value), className: "rn-field-input" })));
+}
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App, null));
+
+</script>
+</body>
+</html>
