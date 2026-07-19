@@ -172,6 +172,7 @@ function App() {
     const [showAddMember, setShowAddMember] = useState(false);
     const [newMemberName, setNewMemberName] = useState("");
     const [formState, setFormState] = useState(null);
+    const [copyState, setCopyState] = useState(null);
     const [saveError, setSaveError] = useState(false);
     const [activeTab, setActiveTab] = useState("log");
     const [bodyActiveTab, setBodyActiveTab] = useState("log");
@@ -323,6 +324,16 @@ function App() {
         const next = (records[selectedId] || []).filter((r) => r.id !== recordId);
         persistRecords(selectedId, next);
     };
+    const copyDayRecords = (targetDate, planType, sessionCount) => {
+        const list = records[selectedId] || [];
+        const sourceItems = (copyState === null || copyState === void 0 ? void 0 : copyState.items) || [];
+        const cloned = sourceItems.map((r) => ({
+            ...r, id: uid(), date: targetDate, planType: planType || "", sessionCount: sessionCount || "",
+        }));
+        const next = [...list, ...cloned].sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
+        persistRecords(selectedId, next);
+        setCopyState(null);
+    };
     const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
     const memberRecords = records[selectedId] || [];
     const memberBodyRecords = bodyRecords[selectedId] || [];
@@ -390,9 +401,10 @@ function App() {
                 React.createElement("button", { className: `rn-tab ${activeTab === "calendar" ? "active" : ""}`, onClick: () => setActiveTab("calendar") },
                     React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
                     "\u30AB\u30EC\u30F3\u30C0\u30FC")),
-            activeTab === "log" && (React.createElement(LogTab, { records: memberRecords, searchQuery: searchQuery, setSearchQuery: setSearchQuery, onEdit: (r) => setFormState({ mode: "edit", record: r }), onDelete: deleteRecord })),
+            activeTab === "log" && (React.createElement(LogTab, { records: memberRecords, searchQuery: searchQuery, setSearchQuery: setSearchQuery, onEdit: (r) => setFormState({ mode: "edit", record: r }), onDelete: deleteRecord, onCopyDay: (date, items) => setCopyState({ date, items }) })),
             activeTab === "trend" && React.createElement(TrendTab, { records: memberRecords }),
             activeTab === "calendar" && React.createElement(CalendarTab, { records: memberRecords }),
+            copyState && (React.createElement(CopyDayForm, { sourceDate: copyState.date, sourceItems: copyState.items, onCancel: () => setCopyState(null), onSave: copyDayRecords })),
             React.createElement("button", { onClick: () => setFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
                 React.createElement(Icon, { size: 26 }, "\uFF0B")),
             formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, lastRecordFor: (exercise) => {
@@ -429,7 +441,7 @@ function Modal({ title, onClose, children }) {
                     React.createElement(Icon, { size: 18 }, "\u2715"))),
             children)));
 }
-function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete }) {
+function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete, onCopyDay }) {
     const filtered = useMemo(() => {
         const q = searchQuery.trim();
         if (!q)
@@ -458,13 +470,17 @@ function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete }) {
             const sessionInfo = items.find((r) => r.planType && r.sessionCount);
             return (React.createElement("div", { key: date },
                 React.createElement("div", { style: { marginBottom: 12 } },
-                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
-                        React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
-                        React.createElement("span", { className: "rn-soft", style: { fontSize: 14, letterSpacing: "0.02em", whiteSpace: "nowrap" } }, formatDateJP(date)),
-                        sessionInfo && (React.createElement("span", { className: "rn-tag", style: { fontSize: 11, whiteSpace: "nowrap" } },
-                            sessionInfo.planType,
-                            sessionInfo.sessionCount,
-                            "\u56DE\u76EE"))),
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 } },
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 } },
+                            React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
+                            React.createElement("span", { className: "rn-soft", style: { fontSize: 14, letterSpacing: "0.02em", whiteSpace: "nowrap" } }, formatDateJP(date)),
+                            sessionInfo && (React.createElement("span", { className: "rn-tag", style: { fontSize: 11, whiteSpace: "nowrap" } },
+                                sessionInfo.planType,
+                                sessionInfo.sessionCount,
+                                "\u56DE\u76EE"))),
+                        React.createElement("button", { onClick: () => onCopyDay(date, items), className: "rn-icon-btn accent", style: { display: "flex", alignItems: "center", gap: 4, fontSize: 12, flexShrink: 0, whiteSpace: "nowrap" }, "aria-label": "\u3053\u306E\u65E5\u3092\u30B3\u30D4\u30FC\u3057\u3066\u65B0\u898F\u4F5C\u6210" },
+                            React.createElement(Icon, { size: 13 }, "\uD83D\uDCCB"),
+                            "\u30B3\u30D4\u30FC\u3057\u3066\u65B0\u898F")),
                     React.createElement("div", { className: "rn-divider", style: { marginTop: 8, flex: "none" } })),
                 React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
                     React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 } },
@@ -656,6 +672,54 @@ function BodyForm({ mode, initial, onCancel, onSave }) {
                     React.createElement("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: "rn-field-input" })),
                 React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } }, BODY_FIELDS.map((f) => (React.createElement(NumField, { key: f.key, label: `${f.label}${f.unit ? `(${f.unit})` : ""}`, value: values[f.key], onChange: (v) => setField(f.key, v) })))),
                 React.createElement("button", { onClick: handleSave, className: "rn-btn-primary", style: { marginTop: 8 } }, isEdit ? "更新する" : "保存する")))));
+}
+function CopyDayForm({ sourceDate, sourceItems, onCancel, onSave }) {
+    const sourceSession = sourceItems.find((r) => r.planType && r.sessionCount);
+    const [targetDate, setTargetDate] = useState(todayStr());
+    const [planType, setPlanType] = useState((sourceSession === null || sourceSession === void 0 ? void 0 : sourceSession.planType) || "");
+    const [sessionCount, setSessionCount] = useState(() => {
+        const n = Number(sourceSession === null || sourceSession === void 0 ? void 0 : sourceSession.sessionCount);
+        return n > 0 ? String(n + 1) : "";
+    });
+    const exerciseNames = sourceItems.map((r) => r.exercise).join("・");
+    const handleSave = () => { if (!targetDate)
+        return; onSave(targetDate, planType, sessionCount); };
+    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onCancel },
+        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+                React.createElement("h2", { className: "rn-serif", style: { fontSize: 18, display: "flex", alignItems: "center", gap: 8 } },
+                    React.createElement(Icon, { size: 17 }, "\uD83D\uDCCB"),
+                    "\u30B3\u30D4\u30FC\u3057\u3066\u65B0\u898F\u4F5C\u6210"),
+                React.createElement("button", { onClick: onCancel, className: "rn-icon-btn" },
+                    React.createElement(Icon, { size: 18 }, "\u2715"))),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 20 } },
+                React.createElement("p", { className: "rn-muted", style: { fontSize: 12 } },
+                    formatDateJP(sourceDate),
+                    "\u306E\u5185\u5BB9(",
+                    exerciseNames,
+                    ")\u3092\u3001\u65B0\u3057\u3044\u65E5\u4ED8\u306B\u305D\u306E\u307E\u307E\u30B3\u30D4\u30FC\u3057\u307E\u3059\u3002"),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u30B3\u30D4\u30FC\u5148\u306E\u65E5\u4ED8"),
+                    React.createElement("input", { type: "date", value: targetDate, onChange: (e) => setTargetDate(e.target.value), className: "rn-field-input" })),
+                React.createElement("div", null,
+                    React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u56DE\u6570"),
+                    React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+                        React.createElement("div", null,
+                            React.createElement("label", { className: "rn-faint", style: { fontSize: 11, display: "block", marginBottom: 4 } }, "\u30D7\u30E9\u30F3"),
+                            React.createElement("select", { value: planType, onChange: (e) => setPlanType(e.target.value), className: "rn-field-input" },
+                                React.createElement("option", { value: "" }, "\u9078\u629E\u306A\u3057"),
+                                PLAN_OPTIONS.map((p) => React.createElement("option", { key: p, value: p }, p)))),
+                        React.createElement("div", null,
+                            React.createElement("label", { className: "rn-faint", style: { fontSize: 11, display: "block", marginBottom: 4 } }, "\u56DE\u6570"),
+                            React.createElement("input", { type: "number", inputMode: "numeric", value: sessionCount, onChange: (e) => setSessionCount(e.target.value), className: "rn-field-input" })))),
+                targetDate && (React.createElement("p", { className: "rn-faint", style: { fontSize: 12 } },
+                    "\u30B3\u30D4\u30FC\u3057\u3066\u65B0\u898F \u25B6 ",
+                    formatDateJP(targetDate),
+                    " \u25B6 ",
+                    planType || "プランなし",
+                    " \u25B6 ",
+                    sessionCount ? `${sessionCount}回目` : "回数未設定")),
+                React.createElement("button", { onClick: handleSave, className: "rn-btn-primary", style: { marginTop: 8 } }, "\u3053\u306E\u5185\u5BB9\u3067\u30B3\u30D4\u30FC\u3059\u308B")))));
 }
 function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, lastRecordFor, onCancel, onSave }) {
     const isEdit = mode === "edit";
