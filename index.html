@@ -140,6 +140,7 @@ const BODY_PARTS = {
 };
 const PART_ORDER = Object.keys(BODY_PARTS);
 const PLAN_OPTIONS = ["トライアル", "スタンダード", "スペシャル", "継続8回", "継続16回", "継続24回"];
+const ASSIST_OPTIONS = ["1", "2", "3", "4", "5", "△(ギリ)"];
 function partOfExercise(name) {
     for (const p of PART_ORDER) {
         if (BODY_PARTS[p].includes(name))
@@ -173,6 +174,7 @@ function App() {
     const [formState, setFormState] = useState(null);
     const [saveError, setSaveError] = useState(false);
     const [activeTab, setActiveTab] = useState("log");
+    const [bodyActiveTab, setBodyActiveTab] = useState("log");
     const [searchQuery, setSearchQuery] = useState("");
     const [memberSection, setMemberSection] = useState(null); // null | 'training' | 'body'
     const [bodyRecords, setBodyRecords] = useState({});
@@ -404,7 +406,15 @@ function App() {
                 React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } },
                     selectedMember.name,
                     " \u3055\u3093\u30FB\u4F53\u7D44\u6210")),
-            React.createElement(BodyLogTab, { records: memberBodyRecords, onEdit: (r) => setBodyFormState({ mode: "edit", record: r }), onDelete: deleteBodyRecord }),
+            React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--rn-border)" } },
+                React.createElement("button", { className: `rn-tab ${bodyActiveTab === "log" ? "active" : ""}`, onClick: () => setBodyActiveTab("log") },
+                    React.createElement(Icon, { size: 14 }, "\u2261"),
+                    "\u8A18\u9332"),
+                React.createElement("button", { className: `rn-tab ${bodyActiveTab === "trend" ? "active" : ""}`, onClick: () => setBodyActiveTab("trend") },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDCC8"),
+                    "\u63A8\u79FB")),
+            bodyActiveTab === "log" && (React.createElement(BodyLogTab, { records: memberBodyRecords, onEdit: (r) => setBodyFormState({ mode: "edit", record: r }), onDelete: deleteBodyRecord })),
+            bodyActiveTab === "trend" && React.createElement(BodyTrendTab, { records: memberBodyRecords }),
             React.createElement("button", { onClick: () => setBodyFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u4F53\u7D44\u6210\u3092\u8FFD\u52A0" },
                 React.createElement(Icon, { size: 26 }, "\uFF0B")),
             bodyFormState && (React.createElement(BodyForm, { mode: bodyFormState.mode, initial: bodyFormState.record, onCancel: () => setBodyFormState(null), onSave: saveBodyRecord })))),
@@ -462,9 +472,6 @@ function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete }) {
                             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
                                 React.createElement("span", { className: "rn-tag" }, r.part),
                                 React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
-                            React.createElement("div", { className: "rn-soft", style: { fontSize: 14 } },
-                                r.weight,
-                                "kg"),
                             React.createElement(SetSummary, { record: r }),
                             r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
                                 React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
@@ -476,14 +483,14 @@ function LogTab({ records, searchQuery, setSearchQuery, onEdit, onDelete }) {
                                 React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1"))))))))));
         }))));
 }
-function MiniLineChart({ data }) {
+function MiniLineChart({ data, unit }) {
     const width = 100, height = 100, pad = 8;
-    const values = data.map((d) => d.重量);
+    const values = data.map((d) => d.値);
     const min = Math.min(...values), max = Math.max(...values);
     const range = max - min || 1;
     const points = data.map((d, i) => {
         const x = pad + (i / (data.length - 1)) * (width - pad * 2);
-        const y = height - pad - ((d.重量 - min) / range) * (height - pad * 2);
+        const y = height - pad - ((d.値 - min) / range) * (height - pad * 2);
         return `${x},${y}`;
     });
     return (React.createElement("div", null,
@@ -500,11 +507,11 @@ function MiniLineChart({ data }) {
             React.createElement("span", null,
                 "\u6700\u5C0F ",
                 min,
-                "kg"),
+                unit),
             React.createElement("span", null,
                 "\u6700\u5927 ",
                 max,
-                "kg"))));
+                unit))));
 }
 function TrendTab({ records }) {
     const exerciseNames = useMemo(() => Array.from(new Set(records.map((r) => r.exercise))), [records]);
@@ -512,7 +519,7 @@ function TrendTab({ records }) {
     useEffect(() => { if (!exerciseNames.includes(selected))
         setSelected(exerciseNames[0] || ""); }, [exerciseNames]); // eslint-disable-line
     const data = useMemo(() => records.filter((r) => r.exercise === selected).slice()
-        .sort((a, b) => (a.date > b.date ? 1 : -1)).map((r) => ({ date: formatDateShort(r.date), 重量: parseFloat(r.weight) || 0 })), [records, selected]);
+        .sort((a, b) => (a.date > b.date ? 1 : -1)).map((r) => ({ date: formatDateShort(r.date), 値: parseFloat(r.weight) || 0 })), [records, selected]);
     if (exerciseNames.length === 0)
         return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u8A18\u9332\u304C\u5897\u3048\u308B\u3068\u3001\u3053\u3053\u306B\u91CD\u91CF\u306E\u63A8\u79FB\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002");
     return (React.createElement("div", null,
@@ -520,7 +527,29 @@ function TrendTab({ records }) {
             React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u7A2E\u76EE\u3092\u9078\u629E"),
             React.createElement("select", { value: selected, onChange: (e) => setSelected(e.target.value), className: "rn-select" }, exerciseNames.map((ex) => React.createElement("option", { key: ex, value: ex }, ex)))),
         data.length < 2 ? (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "64px 0", fontWeight: 300 } }, "\u8A18\u9332\u304C2\u4EF6\u4EE5\u4E0A\u306B\u306A\u308B\u3068\u30B0\u30E9\u30D5\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002")) : (React.createElement("div", { className: "rn-row", style: { padding: 16 } },
-            React.createElement(MiniLineChart, { data: data })))));
+            React.createElement(MiniLineChart, { data: data, unit: "kg" })))));
+}
+const BODY_FIELDS_FOR_TREND = [
+    { key: "weight", label: "体重", unit: "kg" },
+    { key: "bodyFat", label: "体脂肪率", unit: "%" },
+    { key: "muscleMass", label: "骨格筋肉量", unit: "kg" },
+    { key: "visceralFat", label: "内臓脂肪レベル", unit: "" },
+    { key: "chest", label: "胸囲", unit: "cm" },
+    { key: "waist", label: "腹囲", unit: "cm" },
+    { key: "hip", label: "臀部", unit: "cm" },
+    { key: "thigh", label: "大腿", unit: "cm" },
+];
+function BodyTrendTab({ records }) {
+    const [selectedKey, setSelectedKey] = useState(BODY_FIELDS_FOR_TREND[0].key);
+    const selectedField = BODY_FIELDS_FOR_TREND.find((f) => f.key === selectedKey);
+    const data = useMemo(() => records.filter((r) => r[selectedKey]).slice()
+        .sort((a, b) => (a.date > b.date ? 1 : -1)).map((r) => ({ date: formatDateShort(r.date), 値: parseFloat(r[selectedKey]) || 0 })), [records, selectedKey]);
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { marginBottom: 24 } },
+            React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u9805\u76EE\u3092\u9078\u629E"),
+            React.createElement("select", { value: selectedKey, onChange: (e) => setSelectedKey(e.target.value), className: "rn-select" }, BODY_FIELDS_FOR_TREND.map((f) => React.createElement("option", { key: f.key, value: f.key }, f.label)))),
+        data.length < 2 ? (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "64px 0", fontWeight: 300 } }, "\u8A18\u9332\u304C2\u4EF6\u4EE5\u4E0A\u306B\u306A\u308B\u3068\u30B0\u30E9\u30D5\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002")) : (React.createElement("div", { className: "rn-row", style: { padding: 16 } },
+            React.createElement(MiniLineChart, { data: data, unit: selectedField.unit })))));
 }
 function CalendarTab({ records }) {
     const [month, setMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
@@ -566,9 +595,6 @@ function CalendarTab({ records }) {
                 React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
                     React.createElement("span", { className: "rn-tag" }, r.part),
                     React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
-                React.createElement("div", { className: "rn-soft", style: { fontSize: 14 } },
-                    r.weight,
-                    "kg"),
                 React.createElement(SetSummary, { record: r }))))))))));
 }
 const BODY_FIELDS = [
@@ -637,16 +663,16 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
     const [part, setPart] = useState(initial ? partOfExercise(initial.exercise) : PART_ORDER[0]);
     const [exercise, setExercise] = useState((initial === null || initial === void 0 ? void 0 : initial.exercise) || BODY_PARTS[PART_ORDER[0]][0]);
     const [customExercise, setCustomExercise] = useState(initial && partOfExercise(initial.exercise) === "その他" ? initial.exercise : "");
-    const [weight, setWeight] = useState((initial === null || initial === void 0 ? void 0 : initial.weight) || "");
     const [setDetails, setSetDetails] = useState(() => {
         var _a;
-        if ((_a = initial === null || initial === void 0 ? void 0 : initial.setDetails) === null || _a === void 0 ? void 0 : _a.length)
-            return initial.setDetails.map((s) => ({ reps: s.reps || "", assist: s.assist || "" }));
+        if ((_a = initial === null || initial === void 0 ? void 0 : initial.setDetails) === null || _a === void 0 ? void 0 : _a.length) {
+            return initial.setDetails.map((s) => ({ weight: s.weight || initial.weight || "", reps: s.reps || "", assist: s.assist || "" }));
+        }
         if (initial) {
             const count = Number(initial.sets) > 0 ? Number(initial.sets) : 1;
-            return Array.from({ length: count }, () => ({ reps: initial.reps || "", assist: initial.assist || "" }));
+            return Array.from({ length: count }, () => ({ weight: initial.weight || "", reps: initial.reps || "", assist: initial.assist || "" }));
         }
-        return [{ reps: "", assist: "" }];
+        return [{ weight: "", reps: "", assist: "" }];
     });
     const [note, setNote] = useState((initial === null || initial === void 0 ? void 0 : initial.note) || "");
     const [planType, setPlanType] = useState((initial === null || initial === void 0 ? void 0 : initial.planType) || "");
@@ -667,20 +693,23 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
     const updateSetField = (idx, key, value) => {
         setSetDetails((prev) => prev.map((s, i) => (i === idx ? { ...s, [key]: value } : s)));
     };
-    const addSetRow = () => setSetDetails((prev) => [...prev, { reps: "", assist: "" }]);
+    const addSetRow = () => setSetDetails((prev) => [...prev, { ...prev[prev.length - 1] }]);
     const removeSetRow = (idx) => setSetDetails((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
-    const validate = () => finalExercise && weight && setDetails.length > 0 && setDetails.every((s) => s.reps);
+    const validate = () => finalExercise && setDetails.length > 0 && setDetails.every((s) => s.weight && s.reps);
     const buildData = () => {
         var _a, _b;
-        return ({
-            date, part, exercise: finalExercise, weight,
+        const weights = setDetails.map((s) => parseFloat(s.weight)).filter((n) => !isNaN(n));
+        const topWeight = weights.length ? String(Math.max(...weights)) : "";
+        return {
+            date, part, exercise: finalExercise,
+            weight: topWeight,
             sets: setDetails.length,
             reps: ((_a = setDetails[0]) === null || _a === void 0 ? void 0 : _a.reps) || "",
             assist: ((_b = setDetails[0]) === null || _b === void 0 ? void 0 : _b.assist) || "",
-            setDetails: setDetails.map((s) => ({ reps: s.reps, assist: s.assist || "" })),
+            setDetails: setDetails.map((s) => ({ weight: s.weight || "", reps: s.reps, assist: s.assist || "" })),
             note: note.trim(),
             planType: planType || "", sessionCount: sessionCount || "",
-        });
+        };
     };
     const handleSave = (continueAdding) => {
         if (!validate())
@@ -690,8 +719,7 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
             setExercise(BODY_PARTS[PART_ORDER[0]][0]);
             setPart(PART_ORDER[0]);
             setCustomExercise("");
-            setWeight("");
-            setSetDetails([{ reps: "", assist: "" }]);
+            setSetDetails([{ weight: "", reps: "", assist: "" }]);
             setNote("");
         }
     };
@@ -746,26 +774,31 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
                         "kg \u30FB ",
                         last.sets,
                         "\u30BB\u30C3\u30C8"))),
-                React.createElement(NumField, { label: "\u91CD\u91CF(kg)", value: weight, onChange: setWeight }),
                 React.createElement("div", null,
                     React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
-                        React.createElement("label", { className: "rn-muted", style: { fontSize: 12 } }, "\u30BB\u30C3\u30C8\u3054\u3068\u306E\u56DE\u6570\u30FB\u88DC\u52A9\u56DE\u6570"),
+                        React.createElement("label", { className: "rn-muted", style: { fontSize: 12 } }, "\u30BB\u30C3\u30C8\u3054\u3068\u306E\u91CD\u91CF\u30FB\u56DE\u6570\u30FB\u88DC\u52A9\u56DE\u6570"),
                         React.createElement("button", { onClick: addSetRow, className: "rn-icon-btn accent", style: { display: "flex", alignItems: "center", gap: 4, fontSize: 12 } },
                             React.createElement(Icon, { size: 13 }, "\uFF0B"),
                             "\u30BB\u30C3\u30C8\u3092\u8FFD\u52A0")),
                     React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, setDetails.map((s, idx) => (React.createElement("div", { key: idx, className: "rn-row", style: { padding: "10px 12px" } },
-                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                            React.createElement("span", { className: "rn-muted", style: { fontSize: 12, width: 56, flexShrink: 0 } },
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                            React.createElement("span", { className: "rn-muted", style: { fontSize: 12 } },
                                 idx + 1,
                                 "\u30BB\u30C3\u30C8\u76EE"),
-                            React.createElement("div", { style: { flex: 1 } },
+                            setDetails.length > 1 && (React.createElement("button", { onClick: () => removeSetRow(idx), className: "rn-icon-btn danger", "aria-label": "\u3053\u306E\u30BB\u30C3\u30C8\u3092\u524A\u9664" },
+                                React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1")))),
+                        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 } },
+                            React.createElement("div", null,
+                                React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u91CD\u91CF(kg)"),
+                                React.createElement("input", { type: "number", inputMode: "decimal", value: s.weight, onChange: (e) => updateSetField(idx, "weight", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
+                            React.createElement("div", null,
                                 React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u56DE\u6570"),
                                 React.createElement("input", { type: "number", inputMode: "numeric", value: s.reps, onChange: (e) => updateSetField(idx, "reps", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
-                            React.createElement("div", { style: { flex: 1 } },
+                            React.createElement("div", null,
                                 React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u88DC\u52A9\u56DE\u6570"),
-                                React.createElement("input", { type: "number", inputMode: "numeric", value: s.assist, onChange: (e) => updateSetField(idx, "assist", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
-                            setDetails.length > 1 && (React.createElement("button", { onClick: () => removeSetRow(idx), className: "rn-icon-btn danger", style: { flexShrink: 0 }, "aria-label": "\u3053\u306E\u30BB\u30C3\u30C8\u3092\u524A\u9664" },
-                                React.createElement(Icon, { size: 15 }, "\uD83D\uDDD1"))))))))),
+                                React.createElement("select", { value: s.assist, onChange: (e) => updateSetField(idx, "assist", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } },
+                                    React.createElement("option", { value: "" }, "\u306A\u3057"),
+                                    ASSIST_OPTIONS.map((a) => React.createElement("option", { key: a, value: a }, a)))))))))),
                 React.createElement("div", null,
                     React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u5099\u8003"),
                     React.createElement("textarea", { value: note, onChange: (e) => setNote(e.target.value), rows: 2, placeholder: "\u30D5\u30A9\u30FC\u30E0\u306E\u69D8\u5B50\u3001\u4F53\u8ABF\u306A\u3069", className: "rn-field-input", style: { resize: "none" } })),
@@ -773,21 +806,29 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
                     React.createElement("button", { onClick: () => handleSave(true), className: "rn-btn-outline" }, "\u4FDD\u5B58\u3057\u3066\u3082\u30461\u4EF6\u8A18\u9332\u3059\u308B"),
                     React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary" }, "\u4FDD\u5B58\u3057\u3066\u9589\u3058\u308B")))))));
 }
+function formatAssist(a) {
+    if (!a)
+        return "";
+    return /^\d+$/.test(a) ? `補助${a}回` : `補助${a}`;
+}
 function SetSummary({ record: r }) {
     if (r.setDetails && r.setDetails.length) {
         return (React.createElement("div", { style: { marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }, className: "rn-soft" }, r.setDetails.map((s, i) => (React.createElement("div", { key: i, style: { fontSize: 14 } },
             i + 1,
             "\u30BB\u30C3\u30C8\u76EE: ",
+            s.weight ? `${s.weight}kg × ` : "",
             s.reps,
             "\u56DE",
-            s.assist ? `(補助${s.assist}回)` : "")))));
+            s.assist ? `(${formatAssist(s.assist)})` : "")))));
     }
     return (React.createElement("div", { className: "rn-soft", style: { marginTop: 2, fontSize: 14 } },
+        r.weight,
+        "kg \u30FB ",
         r.reps,
         "\u56DE \u00D7 ",
         r.sets,
         "\u30BB\u30C3\u30C8",
-        r.assist ? `(補助${r.assist}回)` : ""));
+        r.assist ? `(${formatAssist(r.assist)})` : ""));
 }
 function NumField({ label, value, onChange }) {
     return (React.createElement("div", null,
