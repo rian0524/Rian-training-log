@@ -272,7 +272,7 @@ function App() {
         else {
             next = [{ ...data, id: uid() }, ...list];
         }
-        next.sort((a, b) => (a.date < b.date ? 1 : -1));
+        next.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
         persistBodyRecords(selectedId, next);
         setBodyFormState(null);
     };
@@ -310,9 +310,9 @@ function App() {
             next = list.map((r) => (r.id === formState.record.id ? { ...data, id: r.id } : r));
         }
         else {
-            next = [{ ...data, id: uid() }, ...list];
+            next = [...list, { ...data, id: uid() }];
         }
-        next.sort((a, b) => (a.date < b.date ? 1 : -1));
+        next.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
         persistRecords(selectedId, next);
         if (continueAdding)
             setFormState({ mode: "add", keepDate: data.date });
@@ -396,7 +396,7 @@ function App() {
             React.createElement("button", { onClick: () => setFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
                 React.createElement(Icon, { size: 26 }, "\uFF0B")),
             formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, lastRecordFor: (exercise) => {
-                    const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date < b.date ? 1 : -1));
+                    const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
                     return past[0] || null;
                 }, onCancel: () => setFormState(null), onSave: saveRecord })))),
         selectedMember && memberSection === "body" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
@@ -695,7 +695,7 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
     };
     const addSetRow = () => setSetDetails((prev) => [...prev, { ...prev[prev.length - 1] }]);
     const removeSetRow = (idx) => setSetDetails((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
-    const validate = () => finalExercise && setDetails.length > 0 && setDetails.every((s) => s.weight && s.reps);
+    const validate = () => finalExercise && setDetails.length > 0 && setDetails.every((s) => s.reps);
     const buildData = () => {
         var _a, _b;
         const weights = setDetails.map((s) => parseFloat(s.weight)).filter((n) => !isNaN(n));
@@ -723,8 +723,8 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
             setNote("");
         }
     };
-    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onCancel },
-        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" } },
+        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" } },
             React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
                 React.createElement("h2", { className: "rn-serif", style: { fontSize: 18, display: "flex", alignItems: "center", gap: 8 } },
                     React.createElement(Icon, { size: 17 }, "\uD83C\uDFCB"),
@@ -802,7 +802,9 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
                 React.createElement("div", null,
                     React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u5099\u8003"),
                     React.createElement("textarea", { value: note, onChange: (e) => setNote(e.target.value), rows: 2, placeholder: "\u30D5\u30A9\u30FC\u30E0\u306E\u69D8\u5B50\u3001\u4F53\u8ABF\u306A\u3069", className: "rn-field-input", style: { resize: "none" } })),
-                isEdit ? (React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary", style: { marginTop: 8 } }, "\u66F4\u65B0\u3059\u308B")) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
+                isEdit ? (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
+                    React.createElement("button", { onClick: () => handleSave(true), className: "rn-btn-outline" }, "\u66F4\u65B0\u3057\u3066\u8FFD\u52A0\u3059\u308B"),
+                    React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary" }, "\u66F4\u65B0\u3059\u308B"))) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 8 } },
                     React.createElement("button", { onClick: () => handleSave(true), className: "rn-btn-outline" }, "\u4FDD\u5B58\u3057\u3066\u3082\u30461\u4EF6\u8A18\u9332\u3059\u308B"),
                     React.createElement("button", { onClick: () => handleSave(false), className: "rn-btn-primary" }, "\u4FDD\u5B58\u3057\u3066\u9589\u3058\u308B")))))));
 }
