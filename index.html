@@ -669,8 +669,8 @@ function BodyForm({ mode, initial, onCancel, onSave }) {
     const setField = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
     const handleSave = () => { if (!date)
         return; onSave({ date, ...values }); };
-    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onCancel },
-        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+    return (React.createElement("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" } },
+        React.createElement("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" } },
             React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
                 React.createElement("h2", { className: "rn-serif", style: { fontSize: 18, display: "flex", alignItems: "center", gap: 8 } },
                     React.createElement(Icon, { size: 17 }, "\uD83D\uDC64"),
