@@ -37,7 +37,7 @@
     --rn-border: #DDD8CD;
     --rn-danger: #8B4A3B;
   }
-  .rn-app { background: var(--rn-page); color: var(--rn-text); font-family: 'Zen Kaku Gothic New', sans-serif; min-height: 100vh; }
+  .rn-app { background: var(--rn-page); color: var(--rn-text); font-family: 'Zen Kaku Gothic New', sans-serif; min-height: 100vh; padding-top: calc(env(safe-area-inset-top) + 20px); }
   .rn-serif { font-family: 'Shippori Mincho', serif; font-weight: 700; }
   .rn-eyebrow { letter-spacing: 0.35em; color: var(--rn-faint); font-size: 11px; }
   .rn-muted { color: var(--rn-muted); }
@@ -132,12 +132,14 @@ const storage = {
 };
 // ---- 部位 -> 種目 マスタ ----
 const BODY_PARTS = {
+    "脚": ["スクワット", "レッグプレス", "レッグエクステンション", "レッグカール", "ランジ"],
+    "臀筋": ["ヒップスラスト", "ブルガリアンスクワット", "ヒップアブダクション", "グルートブリッジ", "ケーブルキックバック"],
     "胸": ["ベンチプレス", "インクラインベンチプレス", "ダンベルフライ", "チェストプレス", "ペックフライ"],
     "背中": ["ラットプルダウン", "デッドリフト", "ベントオーバーロウ", "シーテッドロウ", "プルアップ"],
-    "脚": ["スクワット", "レッグプレス", "レッグエクステンション", "レッグカール", "ランジ"],
     "肩": ["ショルダープレス", "サイドレイズ", "フロントレイズ", "リアレイズ", "アップライトロウ"],
     "腕": ["アームカール", "トライセプスエクステンション", "ハンマーカール", "ディップス"],
-    "腹": ["クランチ", "レッグレイズ", "プランク", "ロシアンツイスト"],
+    "腹筋": ["クランチ", "レッグレイズ", "プランク", "ロシアンツイスト"],
+    "有酸素": ["トレッドミル", "エアロバイク", "ステアクライマー", "ローイングマシン", "縄跳び"],
     "その他": ["自由入力"],
 };
 const PART_ORDER = Object.keys(BODY_PARTS);
@@ -252,10 +254,13 @@ function App() {
         const current = customExercises[part] || BODY_PARTS[part];
         persistCustomExercises({ ...customExercises, [part]: current.filter((e) => e !== name) });
     };
-    const resetExercisesForPart = (part) => {
-        const next = { ...customExercises };
-        delete next[part];
-        persistCustomExercises(next);
+    const moveExercise = (part, index, direction) => {
+        const current = [...(customExercises[part] || BODY_PARTS[part])];
+        const target = index + direction;
+        if (target < 0 || target >= current.length)
+            return;
+        [current[index], current[target]] = [current[target], current[index]];
+        persistCustomExercises({ ...customExercises, [part]: current });
     };
     const toggleFavorite = (exerciseName) => {
         const next = favorites.includes(exerciseName) ? favorites.filter((f) => f !== exerciseName) : [...favorites, exerciseName];
@@ -411,7 +416,7 @@ function App() {
                 React.createElement("button", { onClick: () => setAppView("members"), className: "rn-icon-btn-lg", "aria-label": "\u623B\u308B" },
                     React.createElement(Icon, { size: 30 }, "\u2039")),
                 React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } }, "\u7A2E\u76EE\u7BA1\u7406")),
-            React.createElement(ExerciseManager, { customExercises: customExercises, onAdd: addExerciseToPart, onRemove: removeExerciseFromPart, onReset: resetExercisesForPart }))),
+            React.createElement(ExerciseManager, { customExercises: customExercises, onAdd: addExerciseToPart, onRemove: removeExerciseFromPart, onMove: moveExercise }))),
         selectedMember && memberSection === null && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 32 } },
                 React.createElement("button", { onClick: () => setSelectedId(null), className: "rn-icon-btn-lg", "aria-label": "\u4E00\u89A7\u306B\u623B\u308B" },
@@ -778,12 +783,11 @@ function CopyDayForm({ sourceDate, sourceItems, onCancel, onSave }) {
                     sessionCount ? `${sessionCount}回目` : "回数未設定")),
                 React.createElement("button", { onClick: handleSave, className: "rn-btn-primary", style: { marginTop: 8 } }, "\u3053\u306E\u5185\u5BB9\u3067\u30B3\u30D4\u30FC\u3059\u308B")))));
 }
-function ExerciseManager({ customExercises, onAdd, onRemove, onReset }) {
+function ExerciseManager({ customExercises, onAdd, onRemove, onMove }) {
     const manageableParts = PART_ORDER.filter((p) => p !== "その他");
     const [part, setPart] = useState(manageableParts[0]);
     const [newName, setNewName] = useState("");
     const options = customExercises[part] || BODY_PARTS[part];
-    const isCustomized = Boolean(customExercises[part]);
     const handleAdd = () => {
         const name = newName.trim();
         if (!name || options.includes(name))
@@ -795,17 +799,20 @@ function ExerciseManager({ customExercises, onAdd, onRemove, onReset }) {
         React.createElement("div", { style: { marginBottom: 24 } },
             React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u90E8\u4F4D\u3092\u9078\u629E"),
             React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, manageableParts.map((p) => (React.createElement("button", { key: p, onClick: () => setPart(p), className: `rn-chip ${part === p ? "active" : ""}` }, p))))),
-        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
-            React.createElement("label", { className: "rn-muted", style: { fontSize: 12 } },
-                part,
-                "\u306E\u7A2E\u76EE\u4E00\u89A7"),
-            isCustomized && (React.createElement("button", { onClick: () => onReset(part), className: "rn-icon-btn accent", style: { fontSize: 12 } }, "\u521D\u671F\u72B6\u614B\u306B\u623B\u3059"))),
+        React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+            part,
+            "\u306E\u7A2E\u76EE\u4E00\u89A7"),
         React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 } },
             options.length === 0 && (React.createElement("p", { className: "rn-faint", style: { fontSize: 14, textAlign: "center", padding: "24px 0", fontWeight: 300 } }, "\u7A2E\u76EE\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E0B\u306E\u6B04\u304B\u3089\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002")),
-            options.map((ex) => (React.createElement("div", { key: ex, className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px" } },
+            options.map((ex, idx) => (React.createElement("div", { key: ex, className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px" } },
                 React.createElement("span", { style: { fontSize: 15 } }, ex),
-                React.createElement("button", { onClick: () => onRemove(part, ex), className: "rn-icon-btn danger", "aria-label": `${ex}を削除` },
-                    React.createElement(Icon, { size: 15 }, "\uD83D\uDDD1")))))),
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4 } },
+                    React.createElement("button", { onClick: () => onMove(part, idx, -1), disabled: idx === 0, className: "rn-icon-btn", style: { opacity: idx === 0 ? 0.3 : 1 }, "aria-label": `${ex}を上に移動` },
+                        React.createElement(Icon, { size: 16 }, "\uFE3F")),
+                    React.createElement("button", { onClick: () => onMove(part, idx, 1), disabled: idx === options.length - 1, className: "rn-icon-btn", style: { opacity: idx === options.length - 1 ? 0.3 : 1 }, "aria-label": `${ex}を下に移動` },
+                        React.createElement(Icon, { size: 16 }, "\uFE40")),
+                    React.createElement("button", { onClick: () => onRemove(part, ex), className: "rn-icon-btn danger", "aria-label": `${ex}を削除` },
+                        React.createElement(Icon, { size: 15 }, "\uD83D\uDDD1"))))))),
         React.createElement("div", { style: { display: "flex", gap: 8 } },
             React.createElement("input", { value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && handleAdd(), placeholder: "\u7A2E\u76EE\u540D\u3092\u8FFD\u52A0", className: "rn-field-input", style: { flex: 1 } }),
             React.createElement("button", { onClick: handleAdd, className: "rn-btn-primary", style: { padding: "10px 20px", fontSize: 14, whiteSpace: "nowrap", width: "auto" } }, "\u8FFD\u52A0"))));
