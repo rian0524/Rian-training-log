@@ -143,9 +143,11 @@ const BODY_PARTS = {
 const PART_ORDER = Object.keys(BODY_PARTS);
 const PLAN_OPTIONS = ["トライアル", "スタンダード", "スペシャル", "継続8回", "継続16回", "継続24回"];
 const ASSIST_OPTIONS = ["1", "2", "3", "4", "5", "△(ギリ)"];
-function partOfExercise(name) {
+function partOfExercise(name, customExercises) {
+    customExercises = customExercises || {};
     for (const p of PART_ORDER) {
-        if (BODY_PARTS[p].includes(name))
+        const list = customExercises[p] || BODY_PARTS[p];
+        if (list.includes(name))
             return p;
     }
     return "その他";
@@ -183,6 +185,9 @@ function App() {
     const [bodyRecords, setBodyRecords] = useState({});
     const [loadedBodyIds, setLoadedBodyIds] = useState({});
     const [bodyFormState, setBodyFormState] = useState(null);
+    const [customExercises, setCustomExercises] = useState({});
+    const [customExercisesLoaded, setCustomExercisesLoaded] = useState(false);
+    const [appView, setAppView] = useState("members"); // 'members' | 'exerciseManager'
     useEffect(() => {
         (async () => {
             try {
@@ -199,7 +204,15 @@ function App() {
             catch (_b) {
                 setFavorites([]);
             }
+            try {
+                const ce = await storage.get("rian:customExercises");
+                setCustomExercises(ce ? JSON.parse(ce.value) : {});
+            }
+            catch (_c) {
+                setCustomExercises({});
+            }
             setFavoritesLoaded(true);
+            setCustomExercisesLoaded(true);
         })();
     }, []);
     const persistMembers = async (next) => {
@@ -219,6 +232,30 @@ function App() {
         catch (_a) {
             setSaveError(true);
         }
+    };
+    const persistCustomExercises = async (next) => {
+        setCustomExercises(next);
+        try {
+            await storage.set("rian:customExercises", JSON.stringify(next));
+        }
+        catch (_a) {
+            setSaveError(true);
+        }
+    };
+    const addExerciseToPart = (part, name) => {
+        const current = customExercises[part] || BODY_PARTS[part];
+        if (current.includes(name))
+            return;
+        persistCustomExercises({ ...customExercises, [part]: [...current, name] });
+    };
+    const removeExerciseFromPart = (part, name) => {
+        const current = customExercises[part] || BODY_PARTS[part];
+        persistCustomExercises({ ...customExercises, [part]: current.filter((e) => e !== name) });
+    };
+    const resetExercisesForPart = (part) => {
+        const next = { ...customExercises };
+        delete next[part];
+        persistCustomExercises(next);
     };
     const toggleFavorite = (exerciseName) => {
         const next = favorites.includes(exerciseName) ? favorites.filter((f) => f !== exerciseName) : [...favorites, exerciseName];
@@ -339,13 +376,16 @@ function App() {
     const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
     const memberRecords = records[selectedId] || [];
     const memberBodyRecords = bodyRecords[selectedId] || [];
-    if (members === null || !favoritesLoaded) {
+    if (members === null || !favoritesLoaded || !customExercisesLoaded) {
         return React.createElement("div", { className: "rn-app rn-loading" },
             React.createElement("p", { className: "rn-faint", style: { fontWeight: 300 } }, "\u8AAD\u307F\u8FBC\u307F\u4E2D..."));
     }
     return (React.createElement("div", { className: "rn-app" },
         saveError && React.createElement("div", { className: "rn-error-banner" }, "\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u30D6\u30E9\u30A6\u30B6\u306E\u8A2D\u5B9A\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"),
-        !selectedMember && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+        !selectedMember && appView === "members" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
+                React.createElement("button", { onClick: () => setAppView("exerciseManager"), className: "rn-icon-btn-lg", "aria-label": "\u7A2E\u76EE\u7BA1\u7406" },
+                    React.createElement(Icon, { size: 20 }, "\u2699\uFE0F"))),
             React.createElement("header", { style: { marginBottom: 40, textAlign: "center" } },
                 React.createElement("p", { className: "rn-eyebrow" }, "RIAN TRAINING LOG"),
                 React.createElement("h1", { className: "rn-serif", style: { fontSize: 30 } }, "\u4F1A\u54E1\u8A18\u9332")),
@@ -366,6 +406,12 @@ function App() {
             showAddMember && (React.createElement(Modal, { onClose: () => setShowAddMember(false), title: "\u4F1A\u54E1\u3092\u8FFD\u52A0" },
                 React.createElement("input", { autoFocus: true, value: newMemberName, onChange: (e) => setNewMemberName(e.target.value), onKeyDown: (e) => e.key === "Enter" && addMember(), placeholder: "\u304A\u540D\u524D", className: "rn-field-input" }),
                 React.createElement("button", { onClick: addMember, className: "rn-btn-primary", style: { marginTop: 24 } }, "\u8FFD\u52A0\u3059\u308B"))))),
+        appView === "exerciseManager" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 32 } },
+                React.createElement("button", { onClick: () => setAppView("members"), className: "rn-icon-btn-lg", "aria-label": "\u623B\u308B" },
+                    React.createElement(Icon, { size: 30 }, "\u2039")),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 20, letterSpacing: "0.02em" } }, "\u7A2E\u76EE\u7BA1\u7406")),
+            React.createElement(ExerciseManager, { customExercises: customExercises, onAdd: addExerciseToPart, onRemove: removeExerciseFromPart, onReset: resetExercisesForPart }))),
         selectedMember && memberSection === null && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 32 } },
                 React.createElement("button", { onClick: () => setSelectedId(null), className: "rn-icon-btn-lg", "aria-label": "\u4E00\u89A7\u306B\u623B\u308B" },
@@ -409,7 +455,7 @@ function App() {
             copyState && (React.createElement(CopyDayForm, { sourceDate: copyState.date, sourceItems: copyState.items, onCancel: () => setCopyState(null), onSave: copyDayRecords })),
             React.createElement("button", { onClick: () => setFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
                 React.createElement(Icon, { size: 26 }, "\uFF0B")),
-            formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, lastRecordFor: (exercise) => {
+            formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, customExercises: customExercises, lastRecordFor: (exercise) => {
                     const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
                     return past[0] || null;
                 }, onCancel: () => setFormState(null), onSave: saveRecord })))),
@@ -732,12 +778,44 @@ function CopyDayForm({ sourceDate, sourceItems, onCancel, onSave }) {
                     sessionCount ? `${sessionCount}回目` : "回数未設定")),
                 React.createElement("button", { onClick: handleSave, className: "rn-btn-primary", style: { marginTop: 8 } }, "\u3053\u306E\u5185\u5BB9\u3067\u30B3\u30D4\u30FC\u3059\u308B")))));
 }
-function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, lastRecordFor, onCancel, onSave }) {
+function ExerciseManager({ customExercises, onAdd, onRemove, onReset }) {
+    const manageableParts = PART_ORDER.filter((p) => p !== "その他");
+    const [part, setPart] = useState(manageableParts[0]);
+    const [newName, setNewName] = useState("");
+    const options = customExercises[part] || BODY_PARTS[part];
+    const isCustomized = Boolean(customExercises[part]);
+    const handleAdd = () => {
+        const name = newName.trim();
+        if (!name || options.includes(name))
+            return;
+        onAdd(part, name);
+        setNewName("");
+    };
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { marginBottom: 24 } },
+            React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 8 } }, "\u90E8\u4F4D\u3092\u9078\u629E"),
+            React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, manageableParts.map((p) => (React.createElement("button", { key: p, onClick: () => setPart(p), className: `rn-chip ${part === p ? "active" : ""}` }, p))))),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+            React.createElement("label", { className: "rn-muted", style: { fontSize: 12 } },
+                part,
+                "\u306E\u7A2E\u76EE\u4E00\u89A7"),
+            isCustomized && (React.createElement("button", { onClick: () => onReset(part), className: "rn-icon-btn accent", style: { fontSize: 12 } }, "\u521D\u671F\u72B6\u614B\u306B\u623B\u3059"))),
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 } },
+            options.length === 0 && (React.createElement("p", { className: "rn-faint", style: { fontSize: 14, textAlign: "center", padding: "24px 0", fontWeight: 300 } }, "\u7A2E\u76EE\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E0B\u306E\u6B04\u304B\u3089\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002")),
+            options.map((ex) => (React.createElement("div", { key: ex, className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px" } },
+                React.createElement("span", { style: { fontSize: 15 } }, ex),
+                React.createElement("button", { onClick: () => onRemove(part, ex), className: "rn-icon-btn danger", "aria-label": `${ex}を削除` },
+                    React.createElement(Icon, { size: 15 }, "\uD83D\uDDD1")))))),
+        React.createElement("div", { style: { display: "flex", gap: 8 } },
+            React.createElement("input", { value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && handleAdd(), placeholder: "\u7A2E\u76EE\u540D\u3092\u8FFD\u52A0", className: "rn-field-input", style: { flex: 1 } }),
+            React.createElement("button", { onClick: handleAdd, className: "rn-btn-primary", style: { padding: "10px 20px", fontSize: 14, whiteSpace: "nowrap", width: "auto" } }, "\u8FFD\u52A0"))));
+}
+function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, customExercises, lastRecordFor, onCancel, onSave }) {
     const isEdit = mode === "edit";
     const [date, setDate] = useState((initial === null || initial === void 0 ? void 0 : initial.date) || defaultDate || todayStr());
-    const [part, setPart] = useState(initial ? partOfExercise(initial.exercise) : PART_ORDER[0]);
-    const [exercise, setExercise] = useState((initial === null || initial === void 0 ? void 0 : initial.exercise) || BODY_PARTS[PART_ORDER[0]][0]);
-    const [customExercise, setCustomExercise] = useState(initial && partOfExercise(initial.exercise) === "その他" ? initial.exercise : "");
+    const [part, setPart] = useState(initial ? partOfExercise(initial.exercise, customExercises) : PART_ORDER[0]);
+    const [exercise, setExercise] = useState((initial === null || initial === void 0 ? void 0 : initial.exercise) || (customExercises[PART_ORDER[0]] || BODY_PARTS[PART_ORDER[0]])[0]);
+    const [customExercise, setCustomExercise] = useState(initial && partOfExercise(initial.exercise, customExercises) === "その他" ? initial.exercise : "");
     const [setDetails, setSetDetails] = useState(() => {
         var _a;
         if ((_a = initial === null || initial === void 0 ? void 0 : initial.setDetails) === null || _a === void 0 ? void 0 : _a.length) {
@@ -752,13 +830,18 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
     const [note, setNote] = useState((initial === null || initial === void 0 ? void 0 : initial.note) || "");
     const [planType, setPlanType] = useState((initial === null || initial === void 0 ? void 0 : initial.planType) || "");
     const [sessionCount, setSessionCount] = useState((initial === null || initial === void 0 ? void 0 : initial.sessionCount) || "");
-    const isOther = part === "その他";
-    const exerciseOptions = BODY_PARTS[part];
+    const partExerciseList = customExercises[part] || BODY_PARTS[part];
+    const isOther = part === "その他" || partExerciseList.length === 0;
+    const exerciseOptions = partExerciseList;
     const finalExercise = isOther ? customExercise.trim() : exercise;
     const last = finalExercise ? lastRecordFor(finalExercise) : null;
-    const handlePartChange = (p) => { setPart(p); setExercise(BODY_PARTS[p][0]); };
+    const handlePartChange = (p) => {
+        setPart(p);
+        const list = customExercises[p] || BODY_PARTS[p];
+        setExercise(list[0] || "");
+    };
     const pickFavorite = (name) => {
-        const p = partOfExercise(name);
+        const p = partOfExercise(name, customExercises);
         setPart(p);
         if (p === "その他")
             setCustomExercise(name);
@@ -791,7 +874,7 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, l
             return;
         onSave(buildData(), { continueAdding });
         if (continueAdding) {
-            setExercise(BODY_PARTS[PART_ORDER[0]][0]);
+            setExercise((customExercises[PART_ORDER[0]] || BODY_PARTS[PART_ORDER[0]])[0] || "");
             setPart(PART_ORDER[0]);
             setCustomExercise("");
             setSetDetails([{ weight: "", reps: "", assist: "" }]);
