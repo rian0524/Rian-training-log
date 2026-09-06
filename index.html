@@ -120,15 +120,48 @@
 "use strict";
 const { useState, useEffect, useMemo } = React;
 // ---- localStorage をベースにした保存API(Claude環境のwindow.storageと同じ形に合わせる) ----
+const FIREBASE_PROJECT_ID = "rian-apps-b3e7b";
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/rianData`;
+
+function fsDecode(doc) {
+  // Firestoreのドキュメント形式からvalue文字列を取り出す
+  const v = doc?.fields?.value?.stringValue;
+  return v !== undefined ? v : null;
+}
+
 const storage = {
-    async get(key) {
-        const v = window.localStorage.getItem(key);
-        return v === null ? null : { key, value: v };
-    },
-    async set(key, value) {
-        window.localStorage.setItem(key, value);
-        return { key, value };
-    },
+  async get(key) {
+    try {
+      const res = await fetch(`${FIRESTORE_BASE}/${encodeURIComponent(key)}`);
+      if (res.status === 404) {
+        // クラウドにまだ無ければ、端末内の古いデータがあるか確認(移行用)
+        const local = window.localStorage.getItem(key);
+        return local === null ? null : { key, value: local };
+      }
+      if (!res.ok) throw new Error("Firestore get failed: " + res.status);
+      const data = await res.json();
+      const value = fsDecode(data);
+      if (value === null) return null;
+      window.localStorage.setItem(key, value); // 直近の値をキャッシュしておく
+      return { key, value };
+    } catch (e) {
+      // 通信できない場合は、端末内の最後の値でとりあえず動かす
+      const local = window.localStorage.getItem(key);
+      if (local === null) throw e;
+      return { key, value: local };
+    }
+  },
+  async set(key, value) {
+    window.localStorage.setItem(key, value); // 即座にローカルにも反映(体感速度のため)
+    const body = { fields: { value: { stringValue: value } } };
+    const res = await fetch(`${FIRESTORE_BASE}/${encodeURIComponent(key)}?updateMask.fieldPaths=value`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Firestore set failed: " + res.status);
+    return { key, value };
+  },
 };
 // ---- 部位 -> 種目 マスタ ----
 const BODY_PARTS = {
@@ -945,25 +978,28 @@ function RecordForm({ mode, initial, defaultDate, favorites, onToggleFavorite, c
                         React.createElement("button", { onClick: addSetRow, className: "rn-icon-btn accent", style: { display: "flex", alignItems: "center", gap: 4, fontSize: 12 } },
                             React.createElement(Icon, { size: 13 }, "\uFF0B"),
                             "\u30BB\u30C3\u30C8\u3092\u8FFD\u52A0")),
-                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, setDetails.map((s, idx) => (React.createElement("div", { key: idx, className: "rn-row", style: { padding: "10px 12px" } },
-                        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
-                            React.createElement("span", { className: "rn-muted", style: { fontSize: 12 } },
-                                idx + 1,
-                                "\u30BB\u30C3\u30C8\u76EE"),
-                            setDetails.length > 1 && (React.createElement("button", { onClick: () => removeSetRow(idx), className: "rn-icon-btn danger", "aria-label": "\u3053\u306E\u30BB\u30C3\u30C8\u3092\u524A\u9664" },
-                                React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1")))),
-                        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 } },
-                            React.createElement("div", null,
-                                React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u91CD\u91CF(kg)"),
-                                React.createElement("input", { type: "number", inputMode: "decimal", value: s.weight, onChange: (e) => updateSetField(idx, "weight", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
-                            React.createElement("div", null,
-                                React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u56DE\u6570"),
-                                React.createElement("input", { type: "number", inputMode: "numeric", value: s.reps, onChange: (e) => updateSetField(idx, "reps", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
-                            React.createElement("div", null,
-                                React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u88DC\u52A9\u56DE\u6570"),
-                                React.createElement("select", { value: s.assist, onChange: (e) => updateSetField(idx, "assist", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } },
-                                    React.createElement("option", { value: "" }, "\u306A\u3057"),
-                                    ASSIST_OPTIONS.map((a) => React.createElement("option", { key: a, value: a }, a)))))))))),
+                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, setDetails.map((s, idx) => {
+                        var _a, _b;
+                        return (React.createElement("div", { key: idx, className: "rn-row", style: { padding: "10px 12px" } },
+                            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                                React.createElement("span", { className: "rn-muted", style: { fontSize: 12 } },
+                                    idx + 1,
+                                    "\u30BB\u30C3\u30C8\u76EE"),
+                                setDetails.length > 1 && (React.createElement("button", { onClick: () => removeSetRow(idx), className: "rn-icon-btn danger", "aria-label": "\u3053\u306E\u30BB\u30C3\u30C8\u3092\u524A\u9664" },
+                                    React.createElement(Icon, { size: 14 }, "\uD83D\uDDD1")))),
+                            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 } },
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u91CD\u91CF(kg)"),
+                                    React.createElement("input", { type: "number", inputMode: "decimal", value: s.weight, onChange: (e) => updateSetField(idx, "weight", e.target.value), placeholder: ((_b = (_a = last === null || last === void 0 ? void 0 : last.setDetails) === null || _a === void 0 ? void 0 : _a[idx]) === null || _b === void 0 ? void 0 : _b.weight) || (last === null || last === void 0 ? void 0 : last.weight) || "", className: "rn-field-input", style: { padding: "4px 0" } })),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u56DE\u6570"),
+                                    React.createElement("input", { type: "number", inputMode: "numeric", value: s.reps, onChange: (e) => updateSetField(idx, "reps", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } })),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: "rn-faint", style: { fontSize: 10, display: "block", marginBottom: 2 } }, "\u88DC\u52A9\u56DE\u6570"),
+                                    React.createElement("select", { value: s.assist, onChange: (e) => updateSetField(idx, "assist", e.target.value), className: "rn-field-input", style: { padding: "4px 0" } },
+                                        React.createElement("option", { value: "" }, "\u306A\u3057"),
+                                        ASSIST_OPTIONS.map((a) => React.createElement("option", { key: a, value: a }, a)))))));
+                    }))),
                 React.createElement("div", null,
                     React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u5099\u8003"),
                     React.createElement("textarea", { value: note, onChange: (e) => setNote(e.target.value), rows: 2, placeholder: "\u30D5\u30A9\u30FC\u30E0\u306E\u69D8\u5B50\u3001\u4F53\u8ABF\u306A\u3069", className: "rn-field-input", style: { resize: "none" } })),
