@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Rian マイページ</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Rianマイページ" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@300;400;500;700&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<style>
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body { overscroll-behavior-y: none; }
+
+  :root {
+    --rn-page: #EDEAE4;
+    --rn-card: #F4F1EA;
+    --rn-card-hover: #FFFFFF;
+    --rn-dark: #2B2B29;
+    --rn-dark-hover: #403F3A;
+    --rn-text: #2B2B29;
+    --rn-muted: #8B8478;
+    --rn-faint: #A39A89;
+    --rn-soft: #6B6459;
+    --rn-accent: #8B6F47;
+    --rn-accent-soft: #D9A566;
+    --rn-border: #DDD8CD;
+    --rn-danger: #8B4A3B;
+  }
+  .rn-app { background: var(--rn-page); color: var(--rn-text); font-family: 'Zen Kaku Gothic New', sans-serif; min-height: 100vh; padding-top: calc(env(safe-area-inset-top) + 20px); }
+  .rn-serif { font-family: 'Shippori Mincho', serif; font-weight: 700; }
+  .rn-eyebrow { letter-spacing: 0.35em; color: var(--rn-faint); font-size: 11px; }
+  .rn-muted { color: var(--rn-muted); }
+  .rn-faint { color: var(--rn-faint); }
+  .rn-soft { color: var(--rn-soft); }
+  .rn-accent-text { color: var(--rn-accent); }
+  .rn-error-banner { background: var(--rn-danger); color: var(--rn-page); font-size: 14px; text-align: center; padding: 8px 16px; }
+
+  .rn-row { background: var(--rn-card); border: 1px solid var(--rn-border); transition: background-color .15s ease; border-radius: 4px; }
+  .rn-row:hover { background: var(--rn-card-hover); }
+
+  .rn-avatar { background: rgba(217,165,102,0.2); color: var(--rn-accent); width: 36px; height: 36px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  .rn-icon-btn { color: var(--rn-faint); background: transparent; border: none; cursor: pointer; transition: color .15s ease; padding: 4px; font-size: 16px; line-height: 1; }
+  .rn-icon-btn-lg { color: var(--rn-faint); background: transparent; border: none; cursor: pointer; transition: color .15s ease; line-height: 1; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 999px; margin: -8px; }
+  .rn-icon-btn-lg:active { background: var(--rn-card); }
+  .rn-icon-btn:hover { color: var(--rn-text); }
+  .rn-icon-btn.danger:hover { color: var(--rn-danger); }
+  .rn-icon-btn.accent:hover { color: var(--rn-accent); }
+
+  .rn-fab {
+    background: var(--rn-dark); color: var(--rn-page); border: none; cursor: pointer;
+    transition: background-color .15s ease; position: fixed; bottom: 32px; right: 32px;
+    width: 56px; height: 56px; border-radius: 999px; box-shadow: 0 10px 25px rgba(0,0,0,.25);
+    display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 40;
+  }
+  .rn-fab:hover { background: var(--rn-dark-hover); }
+
+  .rn-modal-backdrop { background: var(--rn-dark); position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; z-index: 50; }
+  .rn-modal-panel { background: var(--rn-page); border-radius: 4px; padding: 24px; width: 100%; max-width: 420px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+
+  .rn-field-input {
+    border: none; border-bottom: 1px solid var(--rn-border); background: transparent;
+    color: var(--rn-text); outline: none; transition: border-color .15s ease; width: 100%;
+    font-family: inherit; font-size: 15px; padding: 8px 0;
+  }
+  .rn-field-input:focus { border-color: var(--rn-accent); }
+  .rn-field-input::placeholder { color: var(--rn-faint); }
+
+  .rn-search-wrap { background: var(--rn-card); border: 1px solid var(--rn-border); border-radius: 999px; position: relative; margin-bottom: 24px; }
+  .rn-search-wrap .rn-field-input { border: none; padding: 8px 12px 8px 34px; font-size: 14px; }
+  .rn-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--rn-faint); }
+
+  .rn-btn-primary { background: var(--rn-dark); color: var(--rn-page); border: none; cursor: pointer; transition: background-color .15s ease; border-radius: 4px; padding: 10px; font-size: 15px; letter-spacing: 0.02em; width: 100%; }
+  .rn-btn-primary:hover { background: var(--rn-dark-hover); }
+
+  .rn-btn-outline { background: transparent; color: var(--rn-accent); border: 1px solid var(--rn-accent); cursor: pointer; transition: background-color .15s ease; border-radius: 4px; padding: 10px; font-size: 15px; width: 100%; }
+  .rn-btn-outline:hover { background: #FFFFFF; }
+
+  .rn-chip { background: transparent; color: var(--rn-soft); border: 1px solid var(--rn-border); cursor: pointer; transition: all .15s ease; border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  .rn-chip:hover { border-color: var(--rn-accent); }
+  .rn-chip.active { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+
+  .rn-fav-chip { background: transparent; color: var(--rn-accent); border: 1px solid rgba(217,165,102,0.5); cursor: pointer; transition: all .15s ease; border-radius: 999px; padding: 6px 12px; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; }
+  .rn-fav-chip:hover { border-color: var(--rn-accent); }
+  .rn-fav-chip.active { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+
+  .rn-tag { color: var(--rn-accent); background: rgba(217,165,102,0.15); font-size: 10px; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 3px; }
+  .rn-divider { background: var(--rn-border); height: 1px; flex: 1; }
+
+  .rn-tab { color: var(--rn-faint); border-bottom: 2px solid transparent; background: transparent; cursor: pointer; transition: all .15s ease; display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 14px; margin-bottom: -1px; }
+  .rn-tab:hover { color: var(--rn-soft); }
+  .rn-tab.active { color: var(--rn-text); border-color: var(--rn-accent); }
+
+  .rn-cal-cell { color: var(--rn-soft); border: 1px solid transparent; background: transparent; cursor: pointer; transition: background-color .15s ease; aspect-ratio: 1; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; }
+  .rn-cal-cell:hover { background: var(--rn-card); }
+  .rn-cal-cell.has { background: rgba(217,165,102,0.15); border-color: rgba(217,165,102,0.4); color: var(--rn-text); }
+  .rn-cal-cell.picked { background: var(--rn-dark); color: var(--rn-page); border-color: var(--rn-dark); }
+  .rn-cal-dot { background: var(--rn-accent); width: 4px; height: 4px; border-radius: 999px; margin-top: 2px; }
+
+  .rn-select { background: var(--rn-card); border: 1px solid var(--rn-border); color: var(--rn-text); border-radius: 4px; padding: 8px 12px; width: 100%; font-family: inherit; font-size: 15px; }
+
+  .rn-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+"use strict";
+const { useState, useEffect, useMemo } = React;
+const FIREBASE_PROJECT_ID = "rian-apps-b3e7b";
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/rianData`;
+function fsDecode(doc) {
+    var _a, _b;
+    const v = (_b = (_a = doc === null || doc === void 0 ? void 0 : doc.fields) === null || _a === void 0 ? void 0 : _a.value) === null || _b === void 0 ? void 0 : _b.stringValue;
+    return v !== undefined ? v : null;
+}
+const storage = {
+    async get(key) {
+        const res = await fetch(`${FIRESTORE_BASE}/${encodeURIComponent(key)}`);
+        if (res.status === 404)
+            return null;
+        if (!res.ok)
+            throw new Error("Firestore get failed: " + res.status);
+        const data = await res.json();
+        const value = fsDecode(data);
+        return value === null ? null : { key, value };
+    },
+};
+function formatDateJP(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const w = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+    return `${d.getMonth() + 1}月${d.getDate()}日(${w})`;
+}
+function formatDateShort(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+function Icon({ children, size }) {
+    return React.createElement("span", { style: { fontSize: size || 16, lineHeight: 1, display: "inline-block" } }, children);
+}
+function formatAssist(a) {
+    if (!a)
+        return "";
+    return /^\d+$/.test(a) ? `補助${a}回` : `補助${a}`;
+}
+function SetSummary({ record: r }) {
+    if (r.setDetails && r.setDetails.length) {
+        return (React.createElement("div", { style: { marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }, className: "rn-soft" }, r.setDetails.map((s, i) => (React.createElement("div", { key: i, style: { fontSize: 14 } },
+            i + 1,
+            "\u30BB\u30C3\u30C8\u76EE: ",
+            s.weight ? `${s.weight}kg × ` : "",
+            s.reps,
+            "\u56DE",
+            s.assist ? `(${formatAssist(s.assist)})` : "")))));
+    }
+    return (React.createElement("div", { className: "rn-soft", style: { marginTop: 2, fontSize: 14 } },
+        r.weight,
+        "kg \u30FB ",
+        r.reps,
+        "\u56DE \u00D7 ",
+        r.sets,
+        "\u30BB\u30C3\u30C8",
+        r.assist ? `(${formatAssist(r.assist)})` : ""));
+}
+function MiniLineChart({ data, unit }) {
+    const width = 100, height = 100, pad = 6;
+    const values = data.map((d) => d.値);
+    const min = Math.min(...values), max = Math.max(...values);
+    const range = max - min || 1;
+    const points = data.map((d, i) => {
+        const x = pad + (i / (data.length - 1)) * (width - pad * 2);
+        const y = height - pad - ((d.値 - min) / range) * (height - pad * 2);
+        return `${x},${y}`;
+    });
+    const round1 = (n) => Math.round(n * 10) / 10;
+    const mid = (min + max) / 2;
+    const chartHeight = 200;
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { display: "flex", gap: 8 } },
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", justifyContent: "space-between", height: chartHeight, textAlign: "right", flexShrink: 0 }, className: "rn-faint" },
+                React.createElement("span", { style: { fontSize: 11, lineHeight: 1 } },
+                    round1(max),
+                    unit),
+                React.createElement("span", { style: { fontSize: 11, lineHeight: 1 } },
+                    round1(mid),
+                    unit),
+                React.createElement("span", { style: { fontSize: 11, lineHeight: 1 } },
+                    round1(min),
+                    unit)),
+            React.createElement("div", { style: { flex: 1, borderLeft: "1px solid var(--rn-border)" } },
+                React.createElement("svg", { viewBox: `0 0 ${width} ${height}`, style: { width: "100%", height: chartHeight, display: "block" }, preserveAspectRatio: "none" },
+                    React.createElement("line", { x1: pad, y1: pad, x2: width - pad, y2: pad, stroke: "#DDD8CD", strokeWidth: "0.5", vectorEffect: "non-scaling-stroke" }),
+                    React.createElement("line", { x1: pad, y1: height / 2, x2: width - pad, y2: height / 2, stroke: "#DDD8CD", strokeWidth: "0.5", strokeDasharray: "2,2", vectorEffect: "non-scaling-stroke" }),
+                    React.createElement("line", { x1: pad, y1: height - pad, x2: width - pad, y2: height - pad, stroke: "#DDD8CD", strokeWidth: "0.5", vectorEffect: "non-scaling-stroke" }),
+                    React.createElement("polyline", { points: points.join(" "), fill: "none", stroke: "#8B6F47", strokeWidth: "1.2", vectorEffect: "non-scaling-stroke" }),
+                    points.map((p, i) => {
+                        const [x, y] = p.split(",");
+                        return React.createElement("circle", { key: i, cx: x, cy: y, r: "1.4", fill: "#8B6F47", vectorEffect: "non-scaling-stroke" });
+                    })))),
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4, paddingLeft: 40 }, className: "rn-faint" },
+            React.createElement("span", null, data[0].date),
+            React.createElement("span", null, data[data.length - 1].date))));
+}
+const BODY_FIELDS = [
+    { key: "weight", label: "体重", unit: "kg" },
+    { key: "bodyFat", label: "体脂肪率", unit: "%" },
+    { key: "muscleMass", label: "骨格筋肉量", unit: "kg" },
+    { key: "visceralFat", label: "内臓脂肪レベル", unit: "" },
+    { key: "chest", label: "胸囲", unit: "cm" },
+    { key: "waist", label: "腹囲", unit: "cm" },
+    { key: "hip", label: "臀部", unit: "cm" },
+    { key: "thigh", label: "大腿", unit: "cm" },
+];
+function TrainingLogView({ records }) {
+    const grouped = useMemo(() => {
+        const map = new Map();
+        for (const r of records) {
+            if (!map.has(r.date))
+                map.set(r.date, []);
+            map.get(r.date).push(r);
+        }
+        return Array.from(map.entries());
+    }, [records]);
+    if (grouped.length === 0) {
+        return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u307E\u3060\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+    }
+    return (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 32 } }, grouped.map(([date, items]) => {
+        const sessionInfo = items.find((r) => r.planType && r.sessionCount);
+        return (React.createElement("div", { key: date },
+            React.createElement("div", { style: { marginBottom: 12 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
+                    React.createElement("span", { className: "rn-soft", style: { fontSize: 14, letterSpacing: "0.02em", whiteSpace: "nowrap" } }, formatDateJP(date)),
+                    sessionInfo && (React.createElement("span", { className: "rn-tag", style: { fontSize: 11, whiteSpace: "nowrap" } },
+                        sessionInfo.planType,
+                        sessionInfo.sessionCount,
+                        "\u56DE\u76EE"))),
+                React.createElement("div", { className: "rn-divider", style: { marginTop: 8, flex: "none" } })),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+                    React.createElement("span", { className: "rn-tag" }, r.part),
+                    React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
+                React.createElement(SetSummary, { record: r }),
+                r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
+                    React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
+                    React.createElement("span", null, r.note)))))))));
+    })));
+}
+function BodyView({ records }) {
+    const [selectedKey, setSelectedKey] = useState(BODY_FIELDS[0].key);
+    const selectedField = BODY_FIELDS.find((f) => f.key === selectedKey);
+    const trendData = useMemo(() => records.filter((r) => r[selectedKey]).slice()
+        .sort((a, b) => (a.date > b.date ? 1 : -1)).map((r) => ({ date: formatDateShort(r.date), 値: parseFloat(r[selectedKey]) || 0 })), [records, selectedKey]);
+    const sorted = useMemo(() => records.slice().sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1)), [records]);
+    if (records.length === 0) {
+        return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u307E\u3060\u4F53\u7D44\u6210\u306E\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+    }
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { marginBottom: 16 } },
+            React.createElement("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "\u63A8\u79FB\u3092\u898B\u308B\u9805\u76EE"),
+            React.createElement("select", { value: selectedKey, onChange: (e) => setSelectedKey(e.target.value), className: "rn-select" }, BODY_FIELDS.map((f) => React.createElement("option", { key: f.key, value: f.key }, f.label)))),
+        trendData.length < 2 ? (React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "32px 0", fontWeight: 300, fontSize: 14 } }, "\u8A18\u9332\u304C2\u4EF6\u4EE5\u4E0A\u306B\u306A\u308B\u3068\u30B0\u30E9\u30D5\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002")) : (React.createElement("div", { className: "rn-row", style: { padding: 16, marginBottom: 32 } },
+            React.createElement(MiniLineChart, { data: trendData, unit: selectedField.unit }))),
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } }, sorted.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                React.createElement(Icon, { size: 13 }, "\uD83D\uDCC5"),
+                React.createElement("span", { className: "rn-soft", style: { fontSize: 14 } }, formatDateJP(r.date))),
+            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 16, rowGap: 4, fontSize: 14 } }, BODY_FIELDS.map((f) => r[f.key] ? (React.createElement("div", { key: f.key, style: { display: "flex", justifyContent: "space-between" } },
+                React.createElement("span", { className: "rn-muted" }, f.label),
+                React.createElement("span", null,
+                    r[f.key],
+                    f.unit))) : null))))))));
+}
+function App() {
+    const [status, setStatus] = useState("loading"); // loading | ready | notfound | error
+    const [memberName, setMemberName] = useState("");
+    const [records, setRecords] = useState([]);
+    const [bodyRecords, setBodyRecords] = useState([]);
+    const [tab, setTab] = useState("training");
+    useEffect(() => {
+        (async () => {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get("id");
+            if (!id) {
+                setStatus("notfound");
+                return;
+            }
+            try {
+                const [membersRes, recRes, bodyRes] = await Promise.all([
+                    storage.get("rian:members"),
+                    storage.get(`rian:records:${id}`),
+                    storage.get(`rian:body:${id}`),
+                ]);
+                const members = membersRes ? JSON.parse(membersRes.value) : [];
+                const member = members.find((m) => m.id === id);
+                if (!member) {
+                    setStatus("notfound");
+                    return;
+                }
+                setMemberName(member.name);
+                setRecords(recRes ? JSON.parse(recRes.value) : []);
+                setBodyRecords(bodyRes ? JSON.parse(bodyRes.value) : []);
+                setStatus("ready");
+            }
+            catch (e) {
+                setStatus("error");
+            }
+        })();
+    }, []);
+    if (status === "loading") {
+        return React.createElement("div", { className: "rn-app", style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" } },
+            React.createElement("p", { className: "rn-faint", style: { fontWeight: 300 } }, "\u8AAD\u307F\u8FBC\u307F\u4E2D..."));
+    }
+    if (status === "notfound") {
+        return React.createElement("div", { className: "rn-app", style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" } },
+            React.createElement("p", { className: "rn-faint", style: { fontWeight: 300 } },
+                "\u30DA\u30FC\u30B8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002",
+                React.createElement("br", null),
+                "\u30C8\u30EC\u30FC\u30CA\u30FC\u306B\u30EA\u30F3\u30AF\u3092\u518D\u5EA6\u78BA\u8A8D\u3057\u3066\u3082\u3089\u3063\u3066\u304F\u3060\u3055\u3044\u3002"));
+    }
+    if (status === "error") {
+        return React.createElement("div", { className: "rn-app", style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" } },
+            React.createElement("p", { className: "rn-faint", style: { fontWeight: 300 } }, "\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u901A\u4FE1\u74B0\u5883\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u958B\u3044\u3066\u307F\u3066\u304F\u3060\u3055\u3044\u3002"));
+    }
+    return (React.createElement("div", { className: "rn-app" },
+        React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
+            React.createElement("header", { style: { marginBottom: 32, textAlign: "center" } },
+                React.createElement("p", { className: "rn-eyebrow" }, "RIAN TRAINING LOG"),
+                React.createElement("h1", { className: "rn-serif", style: { fontSize: 26 } },
+                    memberName,
+                    " \u3055\u3093")),
+            React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--rn-border)" } },
+                React.createElement("button", { className: `rn-tab ${tab === "training" ? "active" : ""}`, onClick: () => setTab("training") },
+                    React.createElement(Icon, { size: 14 }, "\uD83C\uDFCB"),
+                    "\u30C8\u30EC\u30FC\u30CB\u30F3\u30B0"),
+                React.createElement("button", { className: `rn-tab ${tab === "body" ? "active" : ""}`, onClick: () => setTab("body") },
+                    React.createElement(Icon, { size: 14 }, "\uD83D\uDCC8"),
+                    "\u4F53\u7D44\u6210")),
+            tab === "training" && React.createElement(TrainingLogView, { records: records }),
+            tab === "body" && React.createElement(BodyView, { records: bodyRecords })),
+        React.createElement("style", null, `.rn-pad { padding: 32px 24px 64px; }`)));
+}
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App, null));
+
+</script>
+</body>
+</html>
