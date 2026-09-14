@@ -255,7 +255,8 @@ function TrainingLogView({ records }) {
                 React.createElement(SetSummary, { record: r }),
                 r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
                     React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
-                    React.createElement("span", null, r.note)))))))));
+                    React.createElement("span", null, r.note))),
+                r.noteImage && (React.createElement("img", { src: r.noteImage, style: { marginTop: 6, maxWidth: "100%", border: "1px solid var(--rn-border)", borderRadius: 4, display: "block" } }))))))));
     })));
 }
 function BodyView({ records }) {
