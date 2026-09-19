@@ -155,21 +155,35 @@ function formatAssist(a) {
         return "";
     return /^\d+$/.test(a) ? `補助${a}回` : `補助${a}`;
 }
-function SetSummary({ record: r }) {
+function SetSummary({ record: r, prInfo }) {
+    const red = { color: "#B23B3B", fontWeight: 700 };
     if (r.setDetails && r.setDetails.length) {
-        return (React.createElement("div", { style: { marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }, className: "rn-soft" }, r.setDetails.map((s, i) => (React.createElement("div", { key: i, style: { fontSize: 14 } },
-            i + 1,
-            "\u30BB\u30C3\u30C8\u76EE: ",
-            s.weight ? `${s.weight}kg × ` : "",
-            s.reps,
-            "\u56DE",
-            s.assist ? `(${formatAssist(s.assist)})` : "")))));
+        return (React.createElement("div", { style: { marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }, className: "rn-soft" }, r.setDetails.map((s, i) => {
+            const flags = (prInfo && prInfo.setFlags && prInfo.setFlags[i]) || {};
+            return (React.createElement("div", { key: i, style: { fontSize: 14 } },
+                i + 1,
+                "\u30BB\u30C3\u30C8\u76EE: ",
+                s.weight ? (React.createElement(React.Fragment, null,
+                    flags.weightPR ? React.createElement("span", { style: red },
+                        s.weight,
+                        "kg") : `${s.weight}kg`,
+                    " \u00D7 ")) : "",
+                flags.repsPR ? React.createElement("span", { style: red },
+                    s.reps,
+                    "\u56DE") : `${s.reps}回`,
+                s.assist ? `(${formatAssist(s.assist)})` : ""));
+        })));
     }
+    const flags0 = (prInfo && prInfo.setFlags && prInfo.setFlags[0]) || {};
     return (React.createElement("div", { className: "rn-soft", style: { marginTop: 2, fontSize: 14 } },
-        r.weight,
-        "kg \u30FB ",
-        r.reps,
-        "\u56DE \u00D7 ",
+        flags0.weightPR ? React.createElement("span", { style: red },
+            r.weight,
+            "kg") : `${r.weight}kg`,
+        " \u30FB ",
+        flags0.repsPR ? React.createElement("span", { style: red },
+            r.reps,
+            "\u56DE") : `${r.reps}回`,
+        " \u00D7 ",
         r.sets,
         "\u30BB\u30C3\u30C8",
         r.assist ? `(${formatAssist(r.assist)})` : ""));
@@ -223,28 +237,40 @@ const BODY_FIELDS = [
     { key: "hip", label: "臀部", unit: "cm" },
     { key: "thigh", label: "大腿", unit: "cm" },
 ];
-function getPRIds(records) {
+function computePRHighlights(records) {
     const byExercise = {};
     for (const r of records) {
         if (!byExercise[r.exercise])
             byExercise[r.exercise] = [];
         byExercise[r.exercise].push(r);
     }
-    const prIds = new Set();
+    const result = {};
     Object.values(byExercise).forEach((list) => {
         const sorted = list.slice().sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
-        let runningMax = -Infinity;
-        for (const r of sorted) {
-            const w = parseFloat(r.weight);
-            if (isNaN(w) || w <= 0)
-                continue;
-            if (w > runningMax) {
-                prIds.add(r.id);
-                runningMax = w;
-            }
-        }
+        let maxWeight = -Infinity, maxReps = -Infinity;
+        sorted.forEach((r, idx) => {
+            const isFirst = idx === 0;
+            const sets = r.setDetails && r.setDetails.length ? r.setDetails : [{ weight: r.weight, reps: r.reps }];
+            const setFlags = sets.map((s) => {
+                const w = parseFloat(s.weight);
+                const rp = parseFloat(s.reps);
+                let weightPR = false, repsPR = false;
+                if (!isFirst) {
+                    if (!isNaN(w) && w > 0 && w > maxWeight)
+                        weightPR = true;
+                    if (!isNaN(rp) && rp > 0 && rp > maxReps)
+                        repsPR = true;
+                }
+                if (!isNaN(w) && w > 0 && w > maxWeight)
+                    maxWeight = w;
+                if (!isNaN(rp) && rp > 0 && rp > maxReps)
+                    maxReps = rp;
+                return { weightPR, repsPR };
+            });
+            result[r.id] = { isNewExercise: isFirst, setFlags };
+        });
     });
-    return prIds;
+    return result;
 }
 function TrainingLogView({ records }) {
     const grouped = useMemo(() => {
@@ -256,7 +282,7 @@ function TrainingLogView({ records }) {
         }
         return Array.from(map.entries());
     }, [records]);
-    const prIds = useMemo(() => getPRIds(records), [records]);
+    const prHighlights = useMemo(() => computePRHighlights(records), [records]);
     if (grouped.length === 0) {
         return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u307E\u3060\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
     }
@@ -272,16 +298,18 @@ function TrainingLogView({ records }) {
                         sessionInfo.sessionCount,
                         "\u56DE\u76EE"))),
                 React.createElement("div", { className: "rn-divider", style: { marginTop: 8, flex: "none" } })),
-            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
-                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" } },
-                    React.createElement("span", { className: "rn-tag" }, r.part),
-                    React.createElement("span", { style: { fontSize: 15 } }, r.exercise),
-                    prIds.has(r.id) && (React.createElement("span", { style: { fontSize: 11, color: "#B23B3B", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" } }, "\u2605 \u81EA\u5DF1\u30D9\u30B9\u30C8"))),
-                React.createElement(SetSummary, { record: r }),
-                r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
-                    React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
-                    React.createElement("span", null, r.note))),
-                r.noteImage && (React.createElement("img", { src: r.noteImage, style: { marginTop: 6, maxWidth: "100%", border: "1px solid var(--rn-border)", borderRadius: 4, display: "block" } }))))))));
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => {
+                const prInfo = prHighlights[r.id];
+                return (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" } },
+                        React.createElement("span", { className: "rn-tag" }, r.part),
+                        React.createElement("span", { style: { fontSize: 15, color: prInfo && prInfo.isNewExercise ? "#B23B3B" : undefined, fontWeight: prInfo && prInfo.isNewExercise ? 700 : 400 } }, r.exercise)),
+                    React.createElement(SetSummary, { record: r, prInfo: prInfo }),
+                    r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
+                        React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
+                        React.createElement("span", null, r.note))),
+                    r.noteImage && (React.createElement("img", { src: r.noteImage, style: { marginTop: 6, maxWidth: "100%", border: "1px solid var(--rn-border)", borderRadius: 4, display: "block" } }))));
+            }))));
     })));
 }
 function BodyView({ records }) {
