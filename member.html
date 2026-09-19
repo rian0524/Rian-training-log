@@ -223,6 +223,29 @@ const BODY_FIELDS = [
     { key: "hip", label: "臀部", unit: "cm" },
     { key: "thigh", label: "大腿", unit: "cm" },
 ];
+function getPRIds(records) {
+    const byExercise = {};
+    for (const r of records) {
+        if (!byExercise[r.exercise])
+            byExercise[r.exercise] = [];
+        byExercise[r.exercise].push(r);
+    }
+    const prIds = new Set();
+    Object.values(byExercise).forEach((list) => {
+        const sorted = list.slice().sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
+        let runningMax = -Infinity;
+        for (const r of sorted) {
+            const w = parseFloat(r.weight);
+            if (isNaN(w) || w <= 0)
+                continue;
+            if (w > runningMax) {
+                prIds.add(r.id);
+                runningMax = w;
+            }
+        }
+    });
+    return prIds;
+}
 function TrainingLogView({ records }) {
     const grouped = useMemo(() => {
         const map = new Map();
@@ -233,6 +256,7 @@ function TrainingLogView({ records }) {
         }
         return Array.from(map.entries());
     }, [records]);
+    const prIds = useMemo(() => getPRIds(records), [records]);
     if (grouped.length === 0) {
         return React.createElement("p", { className: "rn-faint", style: { textAlign: "center", padding: "80px 0", fontWeight: 300 } }, "\u307E\u3060\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
     }
@@ -249,9 +273,10 @@ function TrainingLogView({ records }) {
                         "\u56DE\u76EE"))),
                 React.createElement("div", { className: "rn-divider", style: { marginTop: 8, flex: "none" } })),
             React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, items.map((r) => (React.createElement("div", { key: r.id, className: "rn-row", style: { padding: "12px 16px" } },
-                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" } },
                     React.createElement("span", { className: "rn-tag" }, r.part),
-                    React.createElement("span", { style: { fontSize: 15 } }, r.exercise)),
+                    React.createElement("span", { style: { fontSize: 15 } }, r.exercise),
+                    prIds.has(r.id) && (React.createElement("span", { style: { fontSize: 11, color: "#B23B3B", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" } }, "\u2605 \u81EA\u5DF1\u30D9\u30B9\u30C8"))),
                 React.createElement(SetSummary, { record: r }),
                 r.note && (React.createElement("div", { className: "rn-muted", style: { marginTop: 6, fontSize: 14, display: "flex", alignItems: "flex-start", gap: 6 } },
                     React.createElement(Icon, { size: 12 }, "\uD83D\uDCDD"),
