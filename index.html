@@ -481,19 +481,10 @@ function App() {
     const [showTr, setShowTr] = useState(false);
     useEffect(() => { (async () => { try { const r = await storage.get("rian:trainers"); if (r) { const v = JSON.parse(r.value); if (v.length) setTrainers(v); } } catch (e) { } })(); }, []);
     const saveTrainers = (n) => { setTrainers(n); storage.set("rian:trainers", JSON.stringify(n)).catch(() => setSaveError(true)); };
-    const bulkBlock = async (o) => {
-        setBulk(false);
-        await mutate(async () => {
-            const days = [];
-            if (o.mode === "date") days.push(o.date);
-            else { const d = new Date(o.date + "T00:00:00"), end = new Date(o.until + "T00:00:00"); while (d <= end) { if (d.getDay() === o.wd) days.push(ymd(d)); d.setDate(d.getDate() + 1); } }
-            const keys = [];
-            let skip = 0;
-            days.forEach((ds) => { for (let hr = o.from; hr < o.to; hr++) { const k = `${ds}_${pad(hr)}`; if (`r_${k}` in docs || `b_${k}` in docs || `d_${ds}` in docs) skip++; else keys.push(k); } });
-            const res = await Promise.all(keys.map((k) => resPut(`b_${k}`, { t: o.t }, true)));
-            const ok = res.filter(Boolean).length;
-            alert(`${ok}コマをブロックしました。` + (skip + res.length - ok ? `\n${skip + res.length - ok}コマは、すでに予約・ブロックがあるため入れていません。` : ""));
-        });
+    const bulkBlock = async (items) => {
+        let ok = 0;
+        await mutate(async () => { const res = await Promise.all(items.map((i) => resPut(i.key, i.obj, true))); ok = res.filter(Boolean).length; });
+        return ok;
     };
     const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
     const memberRecords = records[selectedId] || [];
@@ -509,7 +500,7 @@ function App() {
         !selectedMember && ["home", "cal", "members"].includes(appView) && h(BottomNav, { view: appView, setView: setAppView }),
         sheet && h(ResvSheet, { r: sheet, member: memberOf(sheet.m), onClose: () => setSheet(null), onRecord: (kind) => goRecord(sheet, kind), onStatus: (st) => changeStatus(sheet, st), onCancel: () => cancelResv(sheet), onTickets: (n) => setTickets(sheet.m, n) }),
         create && h(CreateSheet, { date: create.date, hour: create.h, members, trainers, onClose: () => setCreate(null), onSave: createResv }),
-        bulk && h(BulkSheet, { trainers, onClose: () => setBulk(false), onSave: bulkBlock }),
+        bulk && h(BulkSheet, { docs, members, trainers, onClose: () => setBulk(false), onSave: bulkBlock }),
         showTr && h(TrainerSheet, { trainers, onClose: () => setShowTr(false), onSave: saveTrainers }),
         !selectedMember && appView === "members" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
@@ -714,7 +705,7 @@ function CalView({ docs, list, trainers, onOpen, onSlot, onBulk, onTrainers }) {
                     const base = { position: "absolute", top: (hr - 9) * RH, left: 0, right: 0, height: RH, padding: 0, margin: 0, border: "none", borderTop: "1px dotted var(--rn-border)", overflow: "hidden", font: "inherit", fontSize: 10, lineHeight: 1.25, textAlign: "left", cursor: off ? "default" : "pointer", background: "transparent" };
                     if (off && !r) return h("div", { key: hr, style: base });
                     if (r) return h("button", { key: hr, onClick: () => onOpen({ k: "r_" + k, d: ds, h: hr, ...r }), style: { ...base, background: col(r.t), color: "#fff", fontWeight: 700, padding: "3px 2px", border: "1px solid rgba(255,255,255,.5)", borderRadius: 4, opacity: stOf(r) === "booked" ? 1 : 0.55 } }, (stOf(r) === "done" ? "✓" : stOf(r) === "noshow" ? "✕" : "") + (r.n || "会員"));
-                    if (b) { const c = col(b.t); return h("button", { key: hr, onClick: () => onSlot(ds, hr, "blocked"), style: { ...base, background: `repeating-linear-gradient(45deg,${c}66,${c}66 5px,${c}22 5px,${c}22 10px)`, border: `1px solid ${c}`, borderRadius: 4, color: "var(--rn-text)", padding: "3px 2px" } }, "ブロック"); }
+                    if (b) { const c = b.c || "#bdbdbd", bc = b.t === "store" ? "#666" : col(b.t); return h("button", { key: hr, onClick: () => onSlot(ds, hr, "blocked"), style: { ...base, background: `repeating-linear-gradient(45deg,${c},${c} 5px,${c}bb 5px,${c}bb 10px)`, border: `2px solid ${bc}`, borderRadius: 4, color: "#222", padding: "3px 2px" } }, b.ti || "ブロック"); }
                     return h("button", { key: hr, onClick: () => onSlot(ds, hr, "free"), style: base });
                 }));
             })),
@@ -740,36 +731,97 @@ function CreateSheet({ date, hour, members, trainers, onClose, onSave }) {
                 h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: () => onSave({ type: "resv", mid, weeks, t }) }, "予約を入れる")),
             h("button", { className: "rn-btn-outline", style: { marginTop: 10 }, onClick: () => onSave({ type: "block", t }) }, "この時間をブロックする")));
 }
-function BulkSheet({ trainers, onClose, onSave }) {
-    const [mode, setMode] = useState("date");
-    const [date, setDate] = useState(ymd(new Date()));
-    const [until, setUntil] = useState(ymd(new Date(Date.now() + 84 * 864e5)));
-    const [wd, setWd] = useState(1), [from, setFrom] = useState(13), [to, setTo] = useState(17), [t, setT] = useState(trainers[0].id);
-    const lab = (x) => h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "14px 0 6px" } }, x);
-    const opts = (a, b, suf) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => h("option", { key: n, value: n }, n + ":00" + (suf || "")));
-    const save = () => {
-        if (to <= from) return alert("終わりの時間は、はじめの時間より後にしてください。");
-        if (mode === "week" && until < date) return alert("終了日は、開始日より後にしてください。");
-        onSave({ mode, date, until, wd, from, to, t });
+const HOLI = new Set(["2026-01-01", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20", "2026-04-29", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20", "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23", "2027-01-01", "2027-01-11", "2027-02-11", "2027-02-23", "2027-03-21", "2027-03-22", "2027-04-29", "2027-05-03", "2027-05-04", "2027-05-05", "2027-07-19", "2027-08-11", "2027-09-20", "2027-09-23", "2027-10-11", "2027-11-03", "2027-11-23"]);
+const BCOL = ["#bdbdbd", "#fca5a5", "#fcd34d", "#86efac", "#93c5fd", "#d8b4fe"];
+function BulkSheet({ docs, members, trainers, onClose, onSave }) {
+    const now = new Date();
+    const mr = (off) => [ymd(new Date(now.getFullYear(), now.getMonth() + off, 1)), ymd(new Date(now.getFullYear(), now.getMonth() + off + 1, 0))];
+    const [tab, setTab] = useState("block"), [step, setStep] = useState(1);
+    const [title, setTitle] = useState("ブロック"), [color, setColor] = useState(BCOL[0]);
+    const [staff, setStaff] = useState([trainers[0].id]), [mid, setMid] = useState(members[0] ? members[0].id : "");
+    const [wds, setWds] = useState([1, 2, 3, 4, 5]);
+    const [from, setFrom] = useState(mr(0)[0]), [until, setUntil] = useState(mr(0)[1]);
+    const [hFrom, setHFrom] = useState(12), [hTo, setHTo] = useState(13), [holi, setHoli] = useState("incl");
+    const [cands, setCands] = useState([]), [done, setDone] = useState(0), [busy, setBusy] = useState(false);
+    const lab = (x, sub) => h("div", { style: { margin: "20px 0 8px" } }, h("div", { style: { fontSize: 15 } }, x), sub && h("div", { className: "rn-faint", style: { fontSize: 12 } }, sub));
+    const pill = (on, label, fn, extra) => h("button", { key: label, onClick: fn, style: { padding: "10px 14px", borderRadius: 8, border: on ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "#2f54eb" : "var(--rn-card)", color: on ? "#fff" : "var(--rn-text)", font: "inherit", fontSize: 14, cursor: "pointer", ...extra } }, label);
+    const small = (label, fn) => h("button", { key: label, onClick: fn, style: { padding: "10px 14px", borderRadius: 8, border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", font: "inherit", fontSize: 14, cursor: "pointer" } }, label);
+    const opts = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => h("option", { key: n, value: n }, n + ":00"));
+    const isR = tab === "resv";
+    const want = isR ? [hFrom] : Array.from({ length: Math.max(0, hTo - hFrom) }, (_, i) => hFrom + i);
+    const build = () => {
+        if (!isR && hTo <= hFrom) return alert("終わりの時間は、はじめの時間より後にしてください。");
+        if (until < from) return alert("終了日は、開始日より後にしてください。");
+        if (!wds.length) return alert("曜日を選んでください。");
+        if (isR && !mid) return alert("会員さんを選んでください。");
+        if (tab === "block" && !staff.length) return alert("スタッフを選んでください。");
+        const out = [], d = new Date(from + "T00:00:00"), end = new Date(until + "T00:00:00");
+        while (d <= end && out.length < 400) {
+            const ds = ymd(d), wd = d.getDay();
+            if (wds.includes(wd) && wd !== 0 && !(holi === "skip" && HOLI.has(ds)) && !(`d_${ds}` in docs)) {
+                const hrs = want.filter((hr) => !(`r_${ds}_${pad(hr)}` in docs || `b_${ds}_${pad(hr)}` in docs));
+                out.push({ ds, hrs, all: want.length, on: hrs.length > 0 });
+            }
+            d.setDate(d.getDate() + 1);
+        }
+        setCands(out); setStep(2);
     };
-    return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onClose },
-        h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+    const slotsN = cands.filter((c) => c.on).reduce((a, c) => a + c.hrs.length, 0);
+    const go = async () => {
+        const items = [], mem = members.find((x) => x.id === mid) || {};
+        cands.filter((c) => c.on).forEach((c) => c.hrs.forEach((hr) => {
+            const k = `${c.ds}_${pad(hr)}`;
+            if (isR) items.push({ key: "r_" + k, obj: { m: mid, n: mem.name, t: staff[0] } });
+            else items.push({ key: "b_" + k, obj: tab === "store" ? { t: "store", ti: title, c: color } : { t: staff[0], ts: staff, ti: title, c: color } });
+        }));
+        setBusy(true); const ok = await onSave(items); setBusy(false); setDone(ok); setStep(3);
+    };
+    const WN = "日月火水木金土";
+    const stepDot = (n, l) => h("span", { key: n, style: { display: "flex", alignItems: "center", gap: 6, color: step >= n ? "var(--rn-text)" : "var(--rn-faint)" } }, h("span", { style: { width: 26, height: 26, borderRadius: 999, background: step >= n ? "#2f54eb" : "transparent", color: step >= n ? "#fff" : "var(--rn-faint)", border: "1px solid " + (step >= n ? "#2f54eb" : "var(--rn-border)"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 } }, n), l);
+    const foot = (left, right) => h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 28 } }, left, right);
+    const outline = (label, fn) => h("button", { className: "rn-btn-outline", style: { width: "auto", padding: "12px 22px" }, onClick: fn }, label);
+    const primary = (label, fn) => h("button", { className: "rn-btn-primary", style: { width: "auto", padding: "12px 22px", background: "#2f54eb", color: "#fff" }, disabled: busy, onClick: fn }, label);
+    return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" } },
+        h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0", maxHeight: "94vh", overflowY: "auto" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
-                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, "ブロックを一括で作る"),
+                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, "一括作成:" + (isR ? "予約" : tab === "store" ? "店舗のブロック" : "スタッフのブロック")),
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
-            h("div", { style: { display: "flex", gap: 8 } },
-                h("button", { className: mode === "date" ? "rn-btn-primary" : "rn-btn-outline", onClick: () => setMode("date") }, "日にちを指定"),
-                h("button", { className: mode === "week" ? "rn-btn-primary" : "rn-btn-outline", onClick: () => setMode("week") }, "毎週くり返す")),
-            lab("担当トレーナー"),
-            h("select", { className: "rn-select", value: t, onChange: (e) => setT(e.target.value) }, trainers.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
-            mode === "week" && h("div", null, lab("曜日"), h("select", { className: "rn-select", value: wd, onChange: (e) => setWd(+e.target.value) }, [1, 2, 3, 4, 5, 6].map((n) => h("option", { key: n, value: n }, "日月火水木金土"[n] + "曜日")))),
-            lab(mode === "week" ? "開始日" : "日にち"),
-            h("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: "rn-field-input" }),
-            mode === "week" && h("div", null, lab("終了日"), h("input", { type: "date", value: until, onChange: (e) => setUntil(e.target.value), className: "rn-field-input" })),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-                h("div", null, lab("はじめの時間"), h("select", { className: "rn-select", value: from, onChange: (e) => setFrom(+e.target.value) }, opts(9, 22))),
-                h("div", null, lab("終わりの時間"), h("select", { className: "rn-select", value: to, onChange: (e) => setTo(+e.target.value) }, opts(10, 23)))),
-            h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: save }, "ブロックする")));
+            h("div", { style: { display: "flex", gap: 14, alignItems: "center", fontSize: 14 } }, stepDot(1, "条件"), stepDot(2, "確認"), stepDot(3, "完了")),
+            step === 1 && h("div", null,
+                h("div", { style: { display: "flex", background: "var(--rn-card)", borderRadius: 10, padding: 5, marginTop: 18, gap: 4 } },
+                    [["resv", "予約"], ["block", "スタッフのブロック"], ["store", "店舗のブロック"]].map(([k, l]) => h("button", { key: k, onClick: () => setTab(k), style: { flex: 1, padding: "10px 4px", border: "none", borderRadius: 8, background: tab === k ? "var(--rn-page)" : "transparent", color: "var(--rn-text)", font: "inherit", fontSize: 13, fontWeight: tab === k ? 700 : 400, cursor: "pointer" } }, l))),
+                !isR && h("div", null, lab("タイトル"), h("input", { value: title, onChange: (e) => setTitle(e.target.value), className: "rn-field-input" }),
+                    lab("色"), h("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } }, BCOL.map((c) => h("button", { key: c, onClick: () => setColor(c), style: { width: 38, height: 38, borderRadius: 8, background: c, border: color === c ? "3px solid var(--rn-text)" : "2px solid transparent", cursor: "pointer" } })))),
+                isR && h("div", null, lab("会員さん"), members.length ? h("select", { className: "rn-select", value: mid, onChange: (e) => setMid(e.target.value) }, members.map((x) => h("option", { key: x.id, value: x.id }, x.name))) : h("p", { className: "rn-faint" }, "先に「会員」タブから会員さんを追加してください。")),
+                tab === "store" ? null : isR ? h("div", null, lab("スタッフ"), h("select", { className: "rn-select", value: staff[0] || trainers[0].id, onChange: (e) => setStaff([e.target.value]) }, trainers.map((x) => h("option", { key: x.id, value: x.id }, x.name)))) : h("div", null,
+                    lab("スタッフ", "複数選べます"),
+                    h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => { const on = staff.includes(x.id); return h("button", { key: x.id, onClick: () => setStaff(on ? staff.filter((y) => y !== x.id) : [...staff, x.id]), style: { display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 999, border: on ? "2px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "rgba(47,84,235,.12)" : "var(--rn-card)", color: "var(--rn-text)", font: "inherit", fontSize: 15, cursor: "pointer" } }, on ? "☑" : "☐", h("i", { style: { width: 10, height: 10, borderRadius: 99, background: x.color } }), x.name); })),
+                    h("div", { style: { display: "flex", gap: 8, marginTop: 10, alignItems: "center" } }, small("全員", () => setStaff(trainers.map((x) => x.id))), small("選択解除", () => setStaff([])), h("span", { className: "rn-faint", style: { fontSize: 13 } }, staff.length + "人選択中"))),
+                lab("曜日"),
+                h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, [0, 1, 2, 3, 4, 5, 6].map((n) => pill(wds.includes(n), WN[n], () => n !== 0 && setWds(wds.includes(n) ? wds.filter((y) => y !== n) : [...wds, n]), { opacity: n === 0 ? 0.4 : 1 })), small("平日", () => setWds([1, 2, 3, 4, 5])), small("すべて", () => setWds([1, 2, 3, 4, 5, 6]))),
+                h("div", { className: "rn-faint", style: { fontSize: 12, marginTop: 6 } }, "日曜は定休日のため選べません。"),
+                lab("期間"),
+                h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+                    h("input", { type: "date", value: from, onChange: (e) => setFrom(e.target.value), className: "rn-field-input", style: { flex: 1, minWidth: 130 } }), "〜",
+                    h("input", { type: "date", value: until, onChange: (e) => setUntil(e.target.value), className: "rn-field-input", style: { flex: 1, minWidth: 130 } }),
+                    small("今月", () => { const r = mr(0); setFrom(r[0]); setUntil(r[1]); }), small("来月", () => { const r = mr(1); setFrom(r[0]); setUntil(r[1]); })),
+                lab(isR ? "開始時間" : "時間帯"),
+                h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+                    h("select", { className: "rn-select", style: { flex: 1 }, value: hFrom, onChange: (e) => setHFrom(+e.target.value) }, opts(9, 22)),
+                    !isR && "〜", !isR && h("select", { className: "rn-select", style: { flex: 1 }, value: hTo, onChange: (e) => setHTo(+e.target.value) }, opts(10, 23)),
+                    !isR && small("終日", () => { setHFrom(9); setHTo(23); })),
+                lab("祝日"),
+                h("select", { className: "rn-select", value: holi, onChange: (e) => setHoli(e.target.value) }, h("option", { value: "incl" }, "祝日も対象にする"), h("option", { value: "skip" }, "祝日は除く")),
+                foot(outline("キャンセル", onClose), primary("候補を作る →", build))),
+            step === 2 && h("div", null,
+                h("p", { className: "rn-soft", style: { margin: "20px 0 12px", fontSize: 14 } }, cands.length ? `候補は${cands.filter((c) => c.on).length}日・${slotsN}コマです。外したい日はタップしてチェックを外してください。` : "条件に合う日がありませんでした。"),
+                cands.map((c, i) => h("button", { key: c.ds, disabled: !c.hrs.length, onClick: () => setCands(cands.map((x, j) => (j === i ? { ...x, on: !x.on } : x))), className: "rn-row", style: { display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 16px", marginBottom: 6, font: "inherit", fontSize: 14, color: "var(--rn-text)", opacity: c.hrs.length ? 1 : 0.45, cursor: "pointer", textAlign: "left" } },
+                    c.on ? "☑" : "☐", h("span", { style: { flex: 1 } }, formatDateJP(c.ds)), h("span", { className: "rn-muted", style: { fontSize: 12 } }, !c.hrs.length ? "すでに入っています" : c.hrs.length < c.all ? "一部は入っています" : isR ? hFrom + ":00〜" + (hFrom + 1) + ":00" : hFrom + ":00〜" + hTo + ":00")) ),
+                foot(outline("← 戻る", () => setStep(1)), primary(busy ? "作成中…" : (isR ? "予約する" : "ブロックする") + `(${slotsN}コマ)`, slotsN ? go : () => alert("作成する候補がありません。")))),
+            step === 3 && h("div", { style: { textAlign: "center", padding: "36px 0 8px" } },
+                h("div", { style: { fontSize: 40 } }, "✅"), h("p", { style: { fontSize: 17, margin: "12px 0" } }, `${done}コマを${isR ? "予約" : "ブロック"}しました。`),
+                done < slotsN && h("p", { className: "rn-faint", style: { fontSize: 13 } }, `${slotsN - done}コマは、先に入っていたため作成できませんでした。`),
+                foot(null, primary("閉じる", onClose)))));
 }
 function TrainerSheet({ trainers, onClose, onSave }) {
     const [name, setName] = useState("");
