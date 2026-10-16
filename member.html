@@ -337,12 +337,101 @@ function BodyView({ records }) {
                     r[f.key],
                     f.unit))) : null))))))));
 }
+// ================= 予約 =================
+const h = React.createElement;
+const CANCEL_HOURS = 24; // この時間より前までなら、会員さん自身でキャンセル・変更できる
+const DEF_T = { id: "t1", name: "吉永", color: "#16a34a" };
+const RES = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/rianReserve`;
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const slotDate = (date, hr) => new Date(`${date}T${pad(hr)}:00:00`);
+async function resLoad() {
+    let token = "", out = {};
+    do {
+        const r = await fetch(`${RES}?pageSize=300${token ? `&pageToken=${token}` : ""}`);
+        if (!r.ok) throw new Error("load");
+        const j = await r.json();
+        (j.documents || []).forEach((d) => { const k = d.name.split("/").pop(); try { out[k] = JSON.parse(d.fields.value.stringValue); } catch (e) { out[k] = {}; } });
+        token = j.nextPageToken || "";
+    } while (token);
+    return out;
+}
+async function resPut(id, obj, onlyNew) {
+    const r = await fetch(`${RES}/${id}${onlyNew ? "?currentDocument.exists=false" : ""}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(obj) } } }) });
+    return r.ok;
+}
+async function resDel(id) { await fetch(`${RES}/${id}`, { method: "DELETE" }); }
+// その枠が、そのトレーナーに対して埋まっているか(誰の予約かは、ここでは分からない)
+function busyFor(docs, ds, hr, t) {
+    if (new Date(ds + "T00:00:00").getDay() === 0 || `d_${ds}` in docs) return true;
+    const hh = pad(hr);
+    return Object.keys(docs).some((k) => { const p = k.split("_"); return (p[0] === "r" || p[0] === "b") && p[1] === ds && p[2] === hh && (!p[3] || p[3] === "store" || p[3] === t); });
+}
+function ReserveView({ id, member, trainers, docs, reload }) {
+    const [tid, setTid] = useState(trainers[0].id);
+    const [day, setDay] = useState(null), [chg, setChg] = useState(null), [busy, setBusy] = useState(false);
+    const now = new Date(), tickets = member.tickets || 0;
+    const tName = (t) => (trainers.find((x) => x.id === t) || {}).name || "";
+    const tCol = (t) => (trainers.find((x) => x.id === t) || trainers[0]).color;
+    const mine = Object.keys(docs).filter((k) => k[0] === "r" && docs[k].m === id).map((k) => { const [, d, hh] = k.split("_"); return { k, d, hr: +hh, ...docs[k] }; })
+        .filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + pad(a.hr)).localeCompare(b.d + pad(b.hr)));
+    const days = [];
+    for (let i = 0; i < 28; i++) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i), ds = ymd(d); if (d.getDay() !== 0 && !(`d_${ds}` in docs)) days.push({ ds, d }); }
+    const sel = day || (days[0] && days[0].ds);
+    const canCancel = (r) => slotDate(r.d, r.hr) - now >= CANCEL_HOURS * 36e5;
+    const cancel = async (r) => {
+        if (!canCancel(r)) return alert(`ご予約の${CANCEL_HOURS}時間前を過ぎているため、こちらからは変更・キャンセルできません。トレーナーへ直接ご連絡ください。`);
+        if (!confirm(`${formatDateJP(r.d)} ${r.hr}:00の予約をキャンセルしますか?`)) return;
+        setBusy(true); try { await resDel(r.k); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
+        setBusy(false); await reload();
+    };
+    const startChange = (r) => { if (!canCancel(r)) return alert(`ご予約の${CANCEL_HOURS}時間前を過ぎているため、こちらからは変更できません。トレーナーへ直接ご連絡ください。`); setChg(r); setTid(r.t || trainers[0].id); window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
+    const pick = async (hr) => {
+        const when = `${formatDateJP(sel)} ${hr}:00(${tName(tid)})`;
+        if (chg) { if (!confirm(`${when}に変更しますか?`)) return; }
+        else {
+            if (mine.length >= tickets) return alert("残りチケットの枚数ぶん、すでに予約が入っています。");
+            if (!confirm(`${when}で予約しますか?`)) return;
+        }
+        const msg = chg ? "変更しました。" : "予約しました。", old = chg;
+        setBusy(true);
+        try {
+            const ok = await resPut(`r_${sel}_${pad(hr)}_${tid}`, { m: id, n: member.name, t: tid }, true);
+            if (!ok) alert("この時間は、先に別の予約が入りました。別の時間をお選びください。");
+            else { if (old) await resDel(old.k); setChg(null); alert(msg); }
+        } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
+        setBusy(false); await reload();
+    };
+    const pill = (on, label, fn, key) => h("button", { key, onClick: fn, style: { flex: "0 0 auto", padding: "10px 14px", borderRadius: 8, border: on ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "#2f54eb" : "var(--rn-card)", color: on ? "#fff" : "var(--rn-text)", font: "inherit", fontSize: 14, cursor: "pointer" } }, label);
+    const sm = (label, fn, danger) => h("button", { onClick: fn, disabled: busy, style: { padding: "8px 14px", borderRadius: 8, border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: danger ? "var(--rn-danger)" : "var(--rn-text)", font: "inherit", fontSize: 13, cursor: "pointer" } }, label);
+    const hd = (t) => h("h2", { className: "rn-serif", style: { fontSize: 17, margin: "28px 0 12px" } }, t);
+    const slots = [];
+    if (sel) for (let hr = 9; hr <= 22; hr++) {
+        const ok = slotDate(sel, hr) > now && !busyFor(docs, sel, hr, tid);
+        slots.push(h("button", { key: hr, disabled: !ok || busy, onClick: () => pick(hr), style: { padding: "14px 0", borderRadius: 8, border: "1px solid var(--rn-border)", background: ok ? "var(--rn-card)" : "transparent", color: ok ? "var(--rn-text)" : "var(--rn-faint)", font: "inherit", fontSize: 15, cursor: ok ? "pointer" : "default", opacity: ok ? 1 : 0.5 } }, ok ? hr + ":00" : hr + ":00 ×"));
+    }
+    return h("div", null,
+        hd("ご予約中"),
+        mine.length ? mine.map((r) => h("div", { key: r.k, className: "rn-row", style: { padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", outline: chg && chg.k === r.k ? "2px solid #2f54eb" : "none" } },
+            h("div", { style: { flex: 1, minWidth: 150 } }, h("div", { style: { fontSize: 15 } }, `${formatDateJP(r.d)} ${r.hr}:00〜${r.hr + 1}:00`), h("div", { className: "rn-muted", style: { fontSize: 13, display: "flex", alignItems: "center", gap: 6 } }, h("i", { style: { width: 9, height: 9, borderRadius: 3, background: tCol(r.t), display: "inline-block" } }), tName(r.t) || "担当トレーナー")),
+            sm("変更", () => startChange(r)), sm("キャンセル", () => cancel(r), true))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "予約はありません。"),
+        hd(chg ? "変更先を選んでください" : "新しく予約する"),
+        chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${chg.hr}:00`, sm("変更をやめる", () => setChg(null))),
+        !chg && tickets <= mine.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
+            trainers.length > 1 && h("div", { style: { marginBottom: 12 } }, h("div", { className: "rn-muted", style: { fontSize: 12, marginBottom: 6 } }, "トレーナー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => pill(tid === x.id, x.name, () => setTid(x.id), x.id)))),
+            h("div", { className: "rn-muted", style: { fontSize: 12, marginBottom: 6 } }, "日にち"),
+            h("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 12 } }, days.map(({ ds, d }) => pill(sel === ds, `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`, () => setDay(ds), ds))),
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 } }, slots),
+            h("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 10 } }, `×は、予約できない時間です。予約の変更・キャンセルは、開始の${CANCEL_HOURS}時間前までできます。`)));
+}
 function App() {
     const [status, setStatus] = useState("loading"); // loading | ready | notfound | error
     const [memberName, setMemberName] = useState("");
     const [records, setRecords] = useState([]);
     const [bodyRecords, setBodyRecords] = useState([]);
-    const [tab, setTab] = useState("training");
+    const [tab, setTab] = useState("resv");
+    const [member, setMember] = useState(null), [trainers, setTrainers] = useState([DEF_T]), [docs, setDocs] = useState({});
+    const myId = new URLSearchParams(window.location.search).get("id");
     useEffect(() => {
         (async () => {
             const params = new URLSearchParams(window.location.search);
@@ -352,10 +441,12 @@ function App() {
                 return;
             }
             try {
-                const [membersRes, recRes, bodyRes] = await Promise.all([
+                const [membersRes, recRes, bodyRes, trRes, resDocs] = await Promise.all([
                     storage.get("rian:members"),
                     storage.get(`rian:records:${id}`),
                     storage.get(`rian:body:${id}`),
+                    storage.get("rian:trainers").catch(() => null),
+                    resLoad().catch(() => ({})),
                 ]);
                 const members = membersRes ? JSON.parse(membersRes.value) : [];
                 const member = members.find((m) => m.id === id);
@@ -364,6 +455,9 @@ function App() {
                     return;
                 }
                 setMemberName(member.name);
+                setMember(member);
+                try { const tv = trRes ? JSON.parse(trRes.value) : []; if (tv.length) setTrainers(tv); } catch (e) { }
+                setDocs(resDocs);
                 setRecords(recRes ? JSON.parse(recRes.value) : []);
                 setBodyRecords(bodyRes ? JSON.parse(bodyRes.value) : []);
                 setStatus("ready");
@@ -395,13 +489,16 @@ function App() {
                 React.createElement("h1", { className: "rn-serif", style: { fontSize: 26 } },
                     memberName,
                     " \u3055\u3093")),
+            h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", marginBottom: 20 } }, h("span", { className: "rn-muted", style: { fontSize: 14 } }, "残りチケット"), h("span", null, h("b", { style: { fontSize: 26 } }, member && member.tickets !== undefined ? member.tickets : "-"), " 枚")),
             React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--rn-border)" } },
+                h("button", { className: `rn-tab ${tab === "resv" ? "active" : ""}`, onClick: () => setTab("resv") }, h(Icon, { size: 14 }, "\uD83D\uDCC5"), "予約"),
                 React.createElement("button", { className: `rn-tab ${tab === "training" ? "active" : ""}`, onClick: () => setTab("training") },
                     React.createElement(Icon, { size: 14 }, "\uD83C\uDFCB"),
                     "\u30C8\u30EC\u30FC\u30CB\u30F3\u30B0"),
                 React.createElement("button", { className: `rn-tab ${tab === "body" ? "active" : ""}`, onClick: () => setTab("body") },
                     React.createElement(Icon, { size: 14 }, "\uD83D\uDCC8"),
                     "\u4F53\u7D44\u6210")),
+            tab === "resv" && member && h(ReserveView, { id: myId, member, trainers, docs, reload: async () => { try { setDocs(await resLoad()); } catch (e) { } } }),
             tab === "training" && React.createElement(TrainingLogView, { records: records }),
             tab === "body" && React.createElement(BodyView, { records: bodyRecords })),
         React.createElement("style", null, `.rn-pad { padding: 32px 24px 64px; }`)));
