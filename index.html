@@ -238,6 +238,20 @@ function App() {
     const [customExercises, setCustomExercises] = useState({});
     const [customExercisesLoaded, setCustomExercisesLoaded] = useState(false);
     const [appView, setAppView] = useState("home"); // 'home' | 'cal' | 'members' | 'exerciseManager'
+    const [dayFilter, setDayFilter] = useState(null);
+    const [auto, setAuto] = useState(null);
+    useEffect(() => {
+        if (!auto || !selectedId) return;
+        if (auto.kind === "training" && loadedRecordIds[selectedId]) {
+            if (!(records[selectedId] || []).some((x) => x.date === auto.d)) setFormState({ mode: "add", keepDate: auto.d });
+            setAuto(null);
+        }
+        if (auto.kind === "body" && loadedBodyIds[selectedId]) {
+            const ex = (bodyRecords[selectedId] || []).find((x) => x.date === auto.d);
+            setBodyFormState(ex ? { mode: "edit", record: ex } : { mode: "add", keepDate: auto.d });
+            setAuto(null);
+        }
+    }, [auto, selectedId, loadedRecordIds, loadedBodyIds]);
     useEffect(() => {
         (async () => {
             try {
@@ -378,6 +392,7 @@ function App() {
         setMemberSection(null);
         setActiveTab("log");
         setSearchQuery("");
+        setDayFilter(null);
         loadRecords(id);
         loadBodyRecords(id);
     };
@@ -460,7 +475,7 @@ function App() {
     const cancelResv = (r) => { if (confirm("この予約を取り消しますか?")) { mutate(() => resDel(r.k)); setSheet(null); } };
     const goRecord = (r, kind) => {
         setSheet(null); selectMember(r.m); setMemberSection(kind);
-        if (kind === "training") setFormState({ mode: "add", keepDate: r.d }); else setBodyFormState({ mode: "add", keepDate: r.d });
+        setDayFilter(kind === "training" ? r.d : null); setAuto({ kind, d: r.d });
     };
     const onSlot = (date, hr, kind) => {
         if (kind === "free") setCreate({ date, h: hr });
@@ -546,7 +561,7 @@ function App() {
                     selectedMember.name,
                     " \u3055\u3093")),
             React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
-                React.createElement("button", { onClick: () => setMemberSection("training"), className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
+                React.createElement("button", { onClick: () => { setDayFilter(null); setMemberSection("training"); }, className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
                     React.createElement("span", { className: "rn-avatar", style: { width: 44, height: 44, fontSize: 20 } },
                         React.createElement(Icon, null, "\uD83C\uDFCB")),
                     React.createElement("span", null,
@@ -594,11 +609,12 @@ function App() {
                 React.createElement("button", { className: `rn-tab ${activeTab === "calendar" ? "active" : ""}`, onClick: () => setActiveTab("calendar") },
                     React.createElement(Icon, { size: 14 }, "\uD83D\uDCC5"),
                     "\u30AB\u30EC\u30F3\u30C0\u30FC")),
-            activeTab === "log" && (React.createElement(LogTab, { records: memberRecords, searchQuery: searchQuery, setSearchQuery: setSearchQuery, onEdit: (r) => setFormState({ mode: "edit", record: r }), onDelete: deleteRecord, onCopyDay: (date, items) => setCopyState({ date, items }) })),
+            activeTab === "log" && dayFilter && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 16, fontSize: 14 } }, formatDateJP(dayFilter) + " の記録", h("button", { onClick: () => setDayFilter(null), style: { border: "none", background: "transparent", color: "var(--rn-accent)", font: "inherit", cursor: "pointer" } }, "すべて見る")),
+            activeTab === "log" && (React.createElement(LogTab, { records: dayFilter ? memberRecords.filter((r) => r.date === dayFilter) : memberRecords, searchQuery: searchQuery, setSearchQuery: setSearchQuery, onEdit: (r) => setFormState({ mode: "edit", record: r }), onDelete: deleteRecord, onCopyDay: (date, items) => setCopyState({ date, items }) })),
             activeTab === "trend" && React.createElement(TrendTab, { records: memberRecords }),
             activeTab === "calendar" && React.createElement(CalendarTab, { records: memberRecords }),
             copyState && (React.createElement(CopyDayForm, { sourceDate: copyState.date, sourceItems: copyState.items, onCancel: () => setCopyState(null), onSave: copyDayRecords })),
-            React.createElement("button", { onClick: () => setFormState({ mode: "add" }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
+            React.createElement("button", { onClick: () => setFormState({ mode: "add", keepDate: dayFilter || undefined }), className: "rn-fab", "aria-label": "\u8A18\u9332\u3092\u8FFD\u52A0" },
                 React.createElement(Icon, { size: 26 }, "\uFF0B")),
             formState && (React.createElement(RecordForm, { mode: formState.mode, initial: formState.record, defaultDate: formState.keepDate, favorites: favorites, onToggleFavorite: toggleFavorite, customExercises: customExercises, lastRecordFor: (exercise) => {
                     const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
@@ -882,12 +898,7 @@ function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
             h("p", { className: "rn-soft", style: { margin: "0 0 8px" } }, `${formatDateJP(r.d)} ${r.h}:00〜${r.h + 1}:00`),
             h(StTag, { r }),
-            member && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", margin: "16px 0 6px" } },
-                h("span", { className: "rn-muted" }, "残り回数"),
-                h("span", { style: { display: "flex", alignItems: "center", gap: 14 } },
-                    h("button", { className: "rv-step", onClick: () => onTickets((member.tickets || 0) - 1) }, "−"),
-                    h("b", { style: { minWidth: 56, textAlign: "center" } }, member.tickets === undefined ? "未設定" : member.tickets + "回"),
-                    h("button", { className: "rv-step", onClick: () => onTickets((member.tickets || 0) + 1) }, "＋"))),
+            member && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", margin: "16px 0 6px" } }, h("span", { className: "rn-muted" }, "残りチケット"), h("b", null, member.tickets === undefined ? "未設定" : member.tickets + "枚")),
             member && btn("トレーニング記録", () => onRecord("training")),
             member && btn("体組成記録", () => onRecord("body")),
             ...(st === "booked" ? [btn("受講済みにする", () => onStatus("done"), "rn-btn-primary"), btn("無断キャンセルにする", () => onStatus("noshow"))] : [btn("予約中に戻す", () => onStatus("booked"))]),
