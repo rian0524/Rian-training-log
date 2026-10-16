@@ -449,7 +449,7 @@ function App() {
         if (tracked) cut = Math.min(cut, mem.tickets); else cut = 0;
         const back = st === "booked" ? (r.cut || 0) : 0;
         if (tracked && (cut || back)) setTickets(mem.id, mem.tickets - cut + back);
-        mutate(() => resPut(r.k, { m: r.m, n: r.n, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : cut }));
+        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : cut }));
         setSheet(null);
     };
     const cancelResv = (r) => { if (confirm("この予約を取り消しますか?")) { mutate(() => resDel(r.k)); setSheet(null); } };
@@ -462,18 +462,37 @@ function App() {
         else if (confirm("ブロックを解除しますか?")) mutate(() => resDel(`b_${date}_${pad(hr)}`));
     };
     const onDayBlock = (date) => mutate(() => (`d_${date}` in docs ? resDel(`d_${date}`) : resPut(`d_${date}`, {}, true)));
-    const createResv = async ({ type, mid, weeks }) => {
+    const createResv = async ({ type, mid, weeks, t }) => {
         const { date, h: hr } = create; setCreate(null);
         await mutate(async () => {
-            if (type === "block") { await resPut(`b_${date}_${pad(hr)}`, {}, true); return; }
+            if (type === "block") { await resPut(`b_${date}_${pad(hr)}`, { t }, true); return; }
             const mem = memberOf(mid); let ok = 0, skip = 0;
             for (let i = 0; i < weeks; i++) {
                 const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + 7 * i);
                 const ds = ymd(d);
                 if (`d_${ds}` in docs || `b_${ds}_${pad(hr)}` in docs) { skip++; continue; }
-                (await resPut(`r_${ds}_${pad(hr)}`, { m: mid, n: mem.name }, true)) ? ok++ : skip++;
+                (await resPut(`r_${ds}_${pad(hr)}`, { m: mid, n: mem.name, t }, true)) ? ok++ : skip++;
             }
             if (skip) alert(`${ok}件を予約しました。${skip}件は、すでに予約・ブロックがあるため入れていません。`);
+        });
+    };
+    const [trainers, setTrainers] = useState([DEF_T]);
+    const [bulk, setBulk] = useState(false);
+    const [showTr, setShowTr] = useState(false);
+    useEffect(() => { (async () => { try { const r = await storage.get("rian:trainers"); if (r) { const v = JSON.parse(r.value); if (v.length) setTrainers(v); } } catch (e) { } })(); }, []);
+    const saveTrainers = (n) => { setTrainers(n); storage.set("rian:trainers", JSON.stringify(n)).catch(() => setSaveError(true)); };
+    const bulkBlock = async (o) => {
+        setBulk(false);
+        await mutate(async () => {
+            const days = [];
+            if (o.mode === "date") days.push(o.date);
+            else { const d = new Date(o.date + "T00:00:00"), end = new Date(o.until + "T00:00:00"); while (d <= end) { if (d.getDay() === o.wd) days.push(ymd(d)); d.setDate(d.getDate() + 1); } }
+            const keys = [];
+            let skip = 0;
+            days.forEach((ds) => { for (let hr = o.from; hr < o.to; hr++) { const k = `${ds}_${pad(hr)}`; if (`r_${k}` in docs || `b_${k}` in docs || `d_${ds}` in docs) skip++; else keys.push(k); } });
+            const res = await Promise.all(keys.map((k) => resPut(`b_${k}`, { t: o.t }, true)));
+            const ok = res.filter(Boolean).length;
+            alert(`${ok}コマをブロックしました。` + (skip + res.length - ok ? `\n${skip + res.length - ok}コマは、すでに予約・ブロックがあるため入れていません。` : ""));
         });
     };
     const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
@@ -486,10 +505,12 @@ function App() {
     return (React.createElement("div", { className: "rn-app" + (!selectedMember && ["home", "cal", "members"].includes(appView) ? " has-nav" : "") },
         saveError && React.createElement("div", { className: "rn-error-banner" }, "\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u30D6\u30E9\u30A6\u30B6\u306E\u8A2D\u5B9A\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"),
         !selectedMember && appView === "home" && h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" }, h(HomeView, { list: resList, onOpen: setSheet })),
-        !selectedMember && appView === "cal" && h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" }, h(CalView, { docs, list: resList, onOpen: setSheet, onSlot, onDayBlock })),
+        !selectedMember && appView === "cal" && h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "16px 8px 100px" } }, h(CalView, { docs, list: resList, trainers, onOpen: setSheet, onSlot, onBulk: () => setBulk(true), onTrainers: () => setShowTr(true) })),
         !selectedMember && ["home", "cal", "members"].includes(appView) && h(BottomNav, { view: appView, setView: setAppView }),
         sheet && h(ResvSheet, { r: sheet, member: memberOf(sheet.m), onClose: () => setSheet(null), onRecord: (kind) => goRecord(sheet, kind), onStatus: (st) => changeStatus(sheet, st), onCancel: () => cancelResv(sheet), onTickets: (n) => setTickets(sheet.m, n) }),
-        create && h(CreateSheet, { date: create.date, hour: create.h, members, onClose: () => setCreate(null), onSave: createResv }),
+        create && h(CreateSheet, { date: create.date, hour: create.h, members, trainers, onClose: () => setCreate(null), onSave: createResv }),
+        bulk && h(BulkSheet, { trainers, onClose: () => setBulk(false), onSave: bulkBlock }),
+        showTr && h(TrainerSheet, { trainers, onClose: () => setShowTr(false), onSave: saveTrainers }),
         !selectedMember && appView === "members" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
                 React.createElement("button", { onClick: () => setAppView("exerciseManager"), className: "rn-icon-btn-lg", "aria-label": "\u7A2E\u76EE\u7BA1\u7406" },
@@ -665,54 +686,108 @@ function HomeView({ list, onOpen }) {
         today.length ? today.map((r) => h(ResvRow, { key: r.k, r, onOpen })) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "本日の予約はありません。"),
         h("p", { className: "rn-muted", style: { fontSize: 13, textAlign: "center" } }, `${today.length}件(受講済み ${cnt("done")}・無断キャンセル ${cnt("noshow")}・残り ${left.length})`));
 }
-function CalView({ docs, list, onOpen, onSlot, onDayBlock }) {
-    const [view, setView] = useState(() => { const d = new Date(); d.setDate(1); return d; });
-    const [picked, setPicked] = useState(ymd(new Date()));
-    const y = view.getFullYear(), m = view.getMonth(), today = ymd(new Date());
-    const has = new Set(list.map((r) => r.d));
-    const cells = [];
-    for (let i = 0; i < new Date(y, m, 1).getDay(); i++) cells.push(h("div", { key: "e" + i }));
-    for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
-        const date = ymd(new Date(y, m, d)), dis = new Date(y, m, d).getDay() === 0;
-        cells.push(h("button", { key: date, className: "rn-cal-cell" + (has.has(date) ? " has" : "") + (date === picked ? " picked" : ""), style: { opacity: dis ? 0.4 : 1, borderColor: date === today && date !== picked ? "var(--rn-accent)" : undefined }, onClick: () => setPicked(date) }, d, has.has(date) && h("span", { className: "rn-cal-dot" })));
-    }
-    const move = (n) => setView(new Date(y, m + n, 1));
-    const slots = [];
-    for (let hr = 9; hr <= 22; hr++) {
-        const k = `r_${picked}_${pad(hr)}`, r = docs[k], blocked = `b_${picked}_${pad(hr)}` in docs;
-        slots.push(h("button", { key: hr, className: "rn-row rv-row", style: { opacity: blocked ? 0.6 : 1 }, onClick: () => (r ? onOpen({ k, d: picked, h: hr, ...r }) : onSlot(picked, hr, blocked ? "blocked" : "free")) },
-            h("span", { className: "rv-time" }, hr + ":00"),
-            h("span", { style: { flex: 1, textAlign: "left", color: r ? undefined : "var(--rn-faint)" } }, r ? r.n || "会員" : blocked ? "ブロック中(タップで解除)" : "空き(タップで予約・ブロック)"),
-            r && h(StTag, { r })));
-    }
-    const sunday = new Date(picked + "T00:00:00").getDay() === 0, dayOff = `d_${picked}` in docs;
+const DEF_T = { id: "t1", name: "吉永", color: "#16a34a" };
+const PAL = ["#2563eb", "#9333ea", "#16a34a", "#ea580c", "#dc2626", "#0d9488", "#db2777", "#ca8a04"];
+function CalView({ docs, list, trainers, onOpen, onSlot, onBulk, onTrainers }) {
+    const [ws, setWs] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
+    const RH = 54, today = ymd(new Date());
+    const col = (id) => (trainers.find((x) => x.id === id) || trainers[0]).color;
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return d; });
+    const moveW = (n) => { const d = new Date(ws); d.setDate(d.getDate() + 7 * n); setWs(d); };
+    const goToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); setWs(d); };
+    const hrs = Array.from({ length: 14 }, (_, i) => 9 + i);
+    const btn = { border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", borderRadius: 6, padding: "8px 12px", font: "inherit", fontSize: 14, cursor: "pointer" };
+    const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
     return h("div", null,
-        h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 } },
-            h("button", { className: "rn-icon-btn-lg", onClick: () => move(-1) }, h(Icon, { size: 24 }, "‹")),
-            h("b", { style: { fontSize: 17, fontWeight: 500 } }, `${y}年${m + 1}月`),
-            h("button", { className: "rn-icon-btn-lg", onClick: () => move(1) }, h(Icon, { size: 24 }, "›"))),
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 } },
-            ["日", "月", "火", "水", "木", "金", "土"].map((w, i) => h("div", { key: w, className: "rn-faint", style: { textAlign: "center", fontSize: 12, color: i === 0 ? "var(--rn-danger)" : undefined } }, w)), cells),
-        h("h2", { className: "rv-h" }, formatDateJP(picked)),
-        sunday ? h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "日曜は定休日です。") : h("div", null,
-            h("button", { className: "rn-btn-outline", style: { marginBottom: 12 }, onClick: () => onDayBlock(picked) }, dayOff ? "この日の休みを解除する" : "この日を休みにする"),
-            dayOff && h("p", { className: "rn-faint", style: { fontSize: 13 } }, "休みの日は、会員さんから予約できません。"), slots));
+        h("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" } },
+            h("button", { style: btn, onClick: () => moveW(-1) }, "‹"), h("button", { style: btn, onClick: goToday }, "今日"), h("button", { style: btn, onClick: () => moveW(1) }, "›"),
+            h("b", { style: { fontWeight: 500, fontSize: 15, margin: "0 auto 0 6px" } }, `${fmt(days[0])}〜${fmt(days[6])}`),
+            h("button", { style: btn, onClick: onBulk }, "一括ブロック"), h("button", { style: btn, onClick: onTrainers }, "⚙")),
+        h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 } }, trainers.map((x) => h("span", { key: x.id, style: { display: "flex", alignItems: "center", gap: 4 } }, h("i", { style: { width: 10, height: 10, borderRadius: 3, background: x.color, display: "inline-block" } }), x.name))),
+        h("div", { style: { display: "grid", gridTemplateColumns: "34px repeat(7,1fr)", border: "1px solid var(--rn-border)", borderRadius: 6, overflow: "hidden", background: "var(--rn-card)" } },
+            h("div", null), days.map((d, i) => h("div", { key: i, style: { textAlign: "center", fontSize: 11, fontWeight: 700, padding: "6px 0", borderLeft: "1px solid var(--rn-border)", color: i === 0 ? "#c0392b" : i === 6 ? "#2563eb" : "var(--rn-text)", background: ymd(d) === today ? "rgba(217,165,102,.25)" : "transparent" } }, d.getDate(), h("br"), "(" + "日月火水木金土"[i] + ")")),
+            h("div", { style: { position: "relative", height: hrs.length * RH } }, hrs.map((hr) => h("div", { key: hr, style: { position: "absolute", top: (hr - 9) * RH, left: 0, right: 2, textAlign: "right", fontSize: 10, color: "var(--rn-soft)", paddingTop: 2 } }, hr + ":00"))),
+            days.map((d, i) => {
+                const ds = ymd(d), off = i === 0 || `d_${ds}` in docs;
+                return h("div", { key: i, style: { position: "relative", height: hrs.length * RH, borderLeft: "1px solid var(--rn-border)", background: off ? "rgba(128,128,128,.18)" : "transparent" } }, hrs.map((hr) => {
+                    const k = `${ds}_${pad(hr)}`, r = docs["r_" + k], b = docs["b_" + k];
+                    const base = { position: "absolute", top: (hr - 9) * RH, left: 0, right: 0, height: RH, padding: 0, margin: 0, border: "none", borderTop: "1px dotted var(--rn-border)", overflow: "hidden", font: "inherit", fontSize: 10, lineHeight: 1.25, textAlign: "left", cursor: off ? "default" : "pointer", background: "transparent" };
+                    if (off && !r) return h("div", { key: hr, style: base });
+                    if (r) return h("button", { key: hr, onClick: () => onOpen({ k: "r_" + k, d: ds, h: hr, ...r }), style: { ...base, background: col(r.t), color: "#fff", fontWeight: 700, padding: "3px 2px", border: "1px solid rgba(255,255,255,.5)", borderRadius: 4, opacity: stOf(r) === "booked" ? 1 : 0.55 } }, (stOf(r) === "done" ? "✓" : stOf(r) === "noshow" ? "✕" : "") + (r.n || "会員"));
+                    if (b) { const c = col(b.t); return h("button", { key: hr, onClick: () => onSlot(ds, hr, "blocked"), style: { ...base, background: `repeating-linear-gradient(45deg,${c}66,${c}66 5px,${c}22 5px,${c}22 10px)`, border: `1px solid ${c}`, borderRadius: 4, color: "var(--rn-text)", padding: "3px 2px" } }, "ブロック"); }
+                    return h("button", { key: hr, onClick: () => onSlot(ds, hr, "free"), style: base });
+                }));
+            })),
+        h("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 8 } }, "空いている枠をタップで予約、ブロックをタップで解除できます。日曜は定休日です。"));
 }
-function CreateSheet({ date, hour, members, onClose, onSave }) {
+function CreateSheet({ date, hour, members, trainers, onClose, onSave }) {
     const [mid, setMid] = useState(members[0] ? members[0].id : "");
     const [weeks, setWeeks] = useState(1);
+    const [t, setT] = useState(trainers[0].id);
+    const lab = (x) => h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, x);
     return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onClose },
         h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
-            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
                 h("h2", { className: "rn-serif", style: { fontSize: 18 } }, `${formatDateJP(date)} ${hour}:00〜`),
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
-            members.length === 0 ? h("p", { className: "rn-faint" }, "先に「会員」タブから会員さんを追加してください。") : h("div", null,
-                h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", marginBottom: 6 } }, "会員さん"),
+            lab("担当トレーナー"),
+            h("select", { className: "rn-select", value: t, onChange: (e) => setT(e.target.value) }, trainers.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
+            members.length === 0 ? h("p", { className: "rn-faint" }, "予約を入れるには、先に「会員」タブから会員さんを追加してください。") : h("div", null,
+                lab("会員さん"),
                 h("select", { className: "rn-select", value: mid, onChange: (e) => setMid(e.target.value) }, members.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
-                h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, "くり返し(同じ曜日・同じ時間)"),
+                lab("くり返し(同じ曜日・同じ時間)"),
                 h("select", { className: "rn-select", value: weeks, onChange: (e) => setWeeks(+e.target.value) }, [1, 2, 3, 4, 6, 8, 12, 16, 24].map((n) => h("option", { key: n, value: n }, n === 1 ? "1回のみ" : `毎週 ${n}回`))),
-                h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: () => onSave({ type: "resv", mid, weeks }) }, "予約を入れる")),
-            h("button", { className: "rn-btn-outline", style: { marginTop: 10 }, onClick: () => onSave({ type: "block" }) }, "この時間をブロックする")));
+                h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: () => onSave({ type: "resv", mid, weeks, t }) }, "予約を入れる")),
+            h("button", { className: "rn-btn-outline", style: { marginTop: 10 }, onClick: () => onSave({ type: "block", t }) }, "この時間をブロックする")));
+}
+function BulkSheet({ trainers, onClose, onSave }) {
+    const [mode, setMode] = useState("date");
+    const [date, setDate] = useState(ymd(new Date()));
+    const [until, setUntil] = useState(ymd(new Date(Date.now() + 84 * 864e5)));
+    const [wd, setWd] = useState(1), [from, setFrom] = useState(13), [to, setTo] = useState(17), [t, setT] = useState(trainers[0].id);
+    const lab = (x) => h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "14px 0 6px" } }, x);
+    const opts = (a, b, suf) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => h("option", { key: n, value: n }, n + ":00" + (suf || "")));
+    const save = () => {
+        if (to <= from) return alert("終わりの時間は、はじめの時間より後にしてください。");
+        if (mode === "week" && until < date) return alert("終了日は、開始日より後にしてください。");
+        onSave({ mode, date, until, wd, from, to, t });
+    };
+    return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onClose },
+        h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, "ブロックを一括で作る"),
+                h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
+            h("div", { style: { display: "flex", gap: 8 } },
+                h("button", { className: mode === "date" ? "rn-btn-primary" : "rn-btn-outline", onClick: () => setMode("date") }, "日にちを指定"),
+                h("button", { className: mode === "week" ? "rn-btn-primary" : "rn-btn-outline", onClick: () => setMode("week") }, "毎週くり返す")),
+            lab("担当トレーナー"),
+            h("select", { className: "rn-select", value: t, onChange: (e) => setT(e.target.value) }, trainers.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
+            mode === "week" && h("div", null, lab("曜日"), h("select", { className: "rn-select", value: wd, onChange: (e) => setWd(+e.target.value) }, [1, 2, 3, 4, 5, 6].map((n) => h("option", { key: n, value: n }, "日月火水木金土"[n] + "曜日")))),
+            lab(mode === "week" ? "開始日" : "日にち"),
+            h("input", { type: "date", value: date, onChange: (e) => setDate(e.target.value), className: "rn-field-input" }),
+            mode === "week" && h("div", null, lab("終了日"), h("input", { type: "date", value: until, onChange: (e) => setUntil(e.target.value), className: "rn-field-input" })),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+                h("div", null, lab("はじめの時間"), h("select", { className: "rn-select", value: from, onChange: (e) => setFrom(+e.target.value) }, opts(9, 22))),
+                h("div", null, lab("終わりの時間"), h("select", { className: "rn-select", value: to, onChange: (e) => setTo(+e.target.value) }, opts(10, 23)))),
+            h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: save }, "ブロックする")));
+}
+function TrainerSheet({ trainers, onClose, onSave }) {
+    const [name, setName] = useState("");
+    const [c, setC] = useState(PAL.find((p) => !trainers.some((x) => x.color === p)) || PAL[0]);
+    const add = () => { if (!name.trim()) return; onSave([...trainers, { id: uid(), name: name.trim(), color: c }]); setName(""); };
+    return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onClose },
+        h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0" }, onClick: (e) => e.stopPropagation() },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, "トレーナーと色"),
+                h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
+            trainers.map((x) => h("div", { key: x.id, className: "rn-row", style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", marginBottom: 8 } },
+                h("i", { style: { width: 18, height: 18, borderRadius: 4, background: x.color } }),
+                h("span", { style: { flex: 1, cursor: "pointer" }, onClick: () => { const n = prompt("名前を変更", x.name); if (n && n.trim()) onSave(trainers.map((y) => (y.id === x.id ? { ...y, name: n.trim() } : y))); } }, x.name + "  ✎"),
+                trainers.length > 1 && h("button", { className: "rn-icon-btn danger", onClick: () => { if (confirm(x.name + " を削除しますか?(予約は残ります)")) onSave(trainers.filter((y) => y.id !== x.id)); } }, "🗑"))),
+            h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, "トレーナーを追加"),
+            h("input", { value: name, onChange: (e) => setName(e.target.value), placeholder: "名前", className: "rn-field-input" }),
+            h("div", { style: { display: "flex", gap: 10, margin: "14px 0", flexWrap: "wrap" } }, PAL.map((p) => h("button", { key: p, onClick: () => setC(p), style: { width: 34, height: 34, borderRadius: 999, background: p, border: c === p ? "3px solid var(--rn-text)" : "3px solid transparent", cursor: "pointer" } }))),
+            h("button", { className: "rn-btn-primary", onClick: add }, "追加する")));
 }
 function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets }) {
     const st = stOf(r);
