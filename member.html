@@ -454,7 +454,7 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
         hd(chg ? "変更先を選んでください" : "新しく予約する"),
         chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${chg.hr}:00`, sm("変更をやめる", () => setChg(null))),
         !chg && tickets <= upcoming.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
-            h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, GYMS.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(通っている店舗)" : ""))))),
+            h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, GYMS.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(所属店舗)" : ""))))),
             trainers.length > 1 && h("div", { style: { marginBottom: 12 } }, lb("トレーナー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => pill(tid === x.id, x.name, () => setTid(x.id), x.id)))),
             lb("日にち"),
             h("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 12 } }, days.map(({ ds, d }) => pill(sel === ds, `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`, () => setDay(ds), ds))),
