@@ -160,7 +160,10 @@ const GYM = (() => {
   const id = new URLSearchParams(window.location.search).get("gym") || l || "rian";
   return GYMS.find((g) => g.id === id) || GYMS[0];
 })();
-const gk = (key) => (GYM.id === "rian" ? key : key.replace(/^rian:/, GYM.id + ":"));
+const gkFor = (gid, key) => (gid === "rian" ? key : key.replace(/^rian:/, gid + ":"));
+const gk = (key) => gkFor(GYM.id, key);
+const VISIT = {}; // 他のジムから来た会員さん: { 会員ID: 所属ジムID }
+const homeOfKey = (key, gid) => { const m = /^rian:(?:records|body):(.+)$/.exec(key); return m && VISIT[m[1]] ? VISIT[m[1]] : gid; };
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/rianData`;
 
 function fsDecode(doc) {
@@ -170,8 +173,8 @@ function fsDecode(doc) {
 }
 
 const storage = {
-  async get(key) {
-    key = gk(key);
+  async get(key, gid) {
+    key = gkFor(homeOfKey(key, gid) || GYM.id, key);
     try {
       const res = await fetch(`${FIRESTORE_BASE}/${encodeURIComponent(key)}`);
       if (res.status === 404) {
@@ -192,8 +195,8 @@ const storage = {
       return { key, value: local };
     }
   },
-  async set(key, value) {
-    key = gk(key);
+  async set(key, value, gid) {
+    key = gkFor(homeOfKey(key, gid) || GYM.id, key);
     window.localStorage.setItem(key, value); // 即座にローカルにも反映(体感速度のため)
     const body = { fields: { value: { stringValue: value } } };
     const res = await fetch(`${FIRESTORE_BASE}/${encodeURIComponent(key)}?updateMask.fieldPaths=value`, {
@@ -268,6 +271,7 @@ function App() {
     const [dayFilter, setDayFilter] = useState(null);
     const [auto, setAuto] = useState(null);
     const [fromView, setFromView] = useState(null);
+    const [guests, setGuests] = useState([]);
     const closeForm = (setter) => { setter(null); if (fromView) { const v = fromView; setFromView(null); setSelectedId(null); setMemberSection(null); setDayFilter(null); setAppView(v); } };
     useEffect(() => {
         if (!auto || !selectedId) return;
@@ -496,25 +500,60 @@ function App() {
         if (nn === old) return m;
         return { ...m, trial: nn, tlog: [{ d: ymd(new Date()), v: nn - old, note: "体験:" + (note || "調整") }, ...(m.tlog || [])].slice(0, 60) };
     }));
-    const changeStatus = (r, st) => {
+    // 他のジムの会員さんが来た場合は、その会員さんの所属ジムのデータを直接書き換える
+    const adjustRemote = async (mid, fn) => {
+        for (const gy of GYMS) {
+            if (gy.id === GYM.id) continue;
+            const got = await storage.get("rian:members", gy.id);
+            if (!got) continue;
+            const list = JSON.parse(got.value), i = list.findIndex((x) => x.id === mid);
+            if (i < 0) continue;
+            list[i] = fn(list[i]);
+            await storage.set("rian:members", JSON.stringify(list), gy.id);
+            return true;
+        }
+        return false;
+    };
+    const changeStatus = async (r, st) => {
         const mem = memberOf(r.m);
-        let cut = 0, useTrial = false;
-        if (st === "done") cut = 1;
-        else if (st === "noshow" && confirm("当日キャンセルとして、残りチケットを1枚減らしますか?")) cut = 1;
-        if (mem && cut) { if ((mem.trial || 0) > 0) useTrial = true; else if (mem.tickets !== undefined) cut = Math.min(cut, mem.tickets); else cut = 0; }
+        let want = 0;
+        if (st === "done") want = 1;
+        else if (st === "noshow" && confirm("当日キャンセルとして、残りチケットを1枚減らしますか?")) want = 1;
+        setSheet(null);
         const back = st === "booked" ? (r.cut || 0) : 0;
         const why = st === "done" ? "受講済み" : "当日キャンセル";
-        if (mem) {
-            if (useTrial) setTrial(mem.id, (mem.trial || 0) - 1, why);
-            else if (back && r.ctr) setTrial(mem.id, (mem.trial || 0) + 1, "予約中に戻す");
-            else if (mem.tickets !== undefined && (cut || back)) setTickets(mem.id, mem.tickets - cut + back, cut ? why : "予約中に戻す");
-        }
-        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : cut, ctr: st !== "booked" && useTrial ? 1 : undefined }));
-        setSheet(null);
+        const calc = (m) => {
+            let cut = want, useTrial = false;
+            if (cut) { if ((m.trial || 0) > 0) useTrial = true; else if (m.tickets !== undefined) cut = Math.min(cut, m.tickets); else cut = 0; }
+            const lg = (v, note) => [{ d: ymd(new Date()), v, note }, ...(m.tlog || [])].slice(0, 60);
+            let m2 = m;
+            if (useTrial) m2 = { ...m, trial: m.trial - 1, tlog: lg(-1, "体験:" + why) };
+            else if (back && r.ctr) m2 = { ...m, trial: (m.trial || 0) + 1, tlog: lg(1, "体験:予約中に戻す") };
+            else if (m.tickets !== undefined && (cut || back)) m2 = { ...m, tickets: m.tickets - cut + back, tlog: lg(back - cut, cut ? why : "予約中に戻す") };
+            return { m2, cut, useTrial };
+        };
+        let res = { cut: 0, useTrial: false };
+        if (mem) { res = calc(mem); if (res.m2 !== mem) persistMembers(members.map((x) => (x.id === mem.id ? res.m2 : x))); }
+        else { try { await adjustRemote(r.m, (m) => { res = calc(m); return res.m2; }); } catch (e) { setSaveError(true); } }
+        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : res.cut, ctr: st !== "booked" && res.useTrial ? 1 : undefined }));
     };
     const cancelResv = (r) => { if (confirm("この予約を取り消しますか?")) { mutate(() => resDel(r.k)); setSheet(null); } };
-    const goRecord = (r, kind) => {
-        setSheet(null); selectMember(r.m); setMemberSection(kind);
+    const goRecord = async (r, kind) => {
+        const id = r.m;
+        if (!memberOf(id)) {
+            let guest = null;
+            try {
+                for (const gy of GYMS) {
+                    if (gy.id === GYM.id) continue;
+                    const got = await storage.get("rian:members", gy.id);
+                    const m = got && JSON.parse(got.value).find((x) => x.id === id);
+                    if (m) { guest = { ...m, guestOf: gy.id }; break; }
+                }
+            } catch (e) { }
+            if (!guest) return alert("所属ジム側で、この会員さんが見つかりませんでした。");
+            VISIT[id] = guest.guestOf; setGuests([guest]);
+        }
+        setSheet(null); selectMember(id); setMemberSection(kind);
         setDayFilter(kind === "training" ? r.d : null); setAuto({ kind, d: r.d, view: appView });
     };
     const onSlot = (date, hr, kind) => {
@@ -554,7 +593,7 @@ function App() {
         await mutate(async () => { const res = await Promise.all(items.map((i) => resPut(i.key, i.obj, true))); ok = res.filter(Boolean).length; });
         return ok;
     };
-    const selectedMember = members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId);
+    const selectedMember = (members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId)) || guests.find((m) => m.id === selectedId);
     const memberRecords = records[selectedId] || [];
     const memberBodyRecords = bodyRecords[selectedId] || [];
     if (members === null || !favoritesLoaded || !customExercisesLoaded) {
@@ -785,7 +824,7 @@ function CalView({ docs, list, trainers, onOpen, onSlot, onUnblock, onBulk, onTr
     };
     const tile = (ds, it, lane, n) => {
         const pos = { position: "absolute", top: (it.s - 9) * RH + 1, height: (it.e - it.s) * RH - 2, left: `${lane * 100 / n}%`, width: `${100 / n}%`, boxSizing: "border-box", overflow: "hidden", borderRadius: 4, padding: "3px 2px", font: "inherit", fontSize: 10, lineHeight: 1.25, textAlign: "left", cursor: "pointer" };
-        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員"));
+        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut, ctr: it.ctr }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員"));
         const c = it.c || "#bdbdbd", bc = it.tk === "store" ? "#666" : col(it.tk);
         return h("button", { key: it.keys[0], onClick: () => onUnblock(it.keys), style: { ...pos, background: `repeating-linear-gradient(45deg,${c},${c} 5px,${c}bb 5px,${c}bb 10px)`, border: `2px solid ${bc}`, color: "#222" } }, it.ti || "ブロック");
     };
@@ -962,8 +1001,9 @@ function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets
             h("p", { className: "rn-soft", style: { margin: "0 0 8px" } }, `${formatDateJP(r.d)} ${r.h}:00〜${r.h + 1}:00`),
             h(StTag, { r }),
             member && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", margin: "16px 0 6px" } }, h("span", { className: "rn-muted" }, "残りチケット"), h("b", null, (member.trial || 0) > 0 ? `体験チケット ${member.trial}枚` : member.tickets === undefined ? "未設定" : member.tickets + "枚")),
-            member && btn("トレーニング記録", () => onRecord("training")),
-            member && btn("体組成記録", () => onRecord("body")),
+            !member && h("p", { className: "rn-faint", style: { fontSize: 13, lineHeight: 1.7, margin: "14px 0 0" } }, "他のジムに所属する会員さんです。記録とチケットは、所属ジム側に保存・反映されます。"),
+            btn("トレーニング記録", () => onRecord("training")),
+            btn("体組成記録", () => onRecord("body")),
             ...(st === "booked" ? [btn("受講済みにする", () => onStatus("done"), "rn-btn-primary"), btn("当日キャンセルにする", () => onStatus("noshow"))] : [btn("予約中に戻す", () => onStatus("booked"))]),
             st === "booked" && h("button", { className: "rv-link", onClick: onCancel }, "この予約を取り消す")));
 }
