@@ -402,7 +402,7 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
     const [tid, setTid] = useState(first(GYM.id));
     const [day, setDay] = useState(null), [chg, setChg] = useState(null), [busy, setBusy] = useState(false);
     const trainers = trainersBy[g] || [defT(g)], docs = docsBy[g] || {};
-    const now = new Date(), tickets = member.tickets || 0;
+    const now = new Date(), tickets = (member.tickets || 0) + (member.trial || 0);
     const gName = (x) => (GYMS.find((y) => y.id === x) || {}).name;
     const tOf = (gg, t) => (trainersBy[gg] || []).find((x) => x.id === t) || {};
     const mine = [];
@@ -530,7 +530,7 @@ function App() {
                 React.createElement("h1", { className: "rn-serif", style: { fontSize: 26 } },
                     memberName,
                     " \u3055\u3093")),
-            h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", marginBottom: 20 } }, h("span", { className: "rn-muted", style: { fontSize: 14 } }, "残りチケット"), h("span", null, h("b", { style: { fontSize: 26 } }, member && member.tickets !== undefined ? member.tickets : "-"), " 枚")),
+            h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", marginBottom: 20 } }, h("span", { className: "rn-muted", style: { fontSize: 14 } }, member && member.trial > 0 ? "体験チケット" : "残りチケット"), h("span", null, h("b", { style: { fontSize: 26 } }, member ? (member.trial > 0 ? member.trial : member.tickets !== undefined ? member.tickets : "-") : "-"), " 枚", member && member.trial > 0 && member.tickets > 0 && h("span", { className: "rn-muted", style: { fontSize: 12, marginLeft: 8 } }, `(通常 ${member.tickets}枚)`))),
             React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--rn-border)" } },
                 h("button", { className: `rn-tab ${tab === "resv" ? "active" : ""}`, onClick: () => setTab("resv") }, h(Icon, { size: 14 }, "\uD83D\uDCC5"), "予約"),
                 React.createElement("button", { className: `rn-tab ${tab === "training" ? "active" : ""}`, onClick: () => setTab("training") },
