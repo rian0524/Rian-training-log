@@ -317,6 +317,7 @@ function App() {
         setMembers(next);
         try {
             await storage.set("rian:members", JSON.stringify(next));
+            next.forEach((m) => { const o = (members || []).find((x) => x.id === m.id); if (!o || memPub(o) !== memPub(m)) storage.set(`rian:mem:${m.id}`, memPub(m)).catch(() => { }); });
         }
         catch (_a) {
             setSaveError(true);
@@ -478,9 +479,15 @@ function App() {
     const [docs, setDocs] = useState({});
     const [sheet, setSheet] = useState(null);
     const [create, setCreate] = useState(null);
-    const reloadRes = async () => { try { setDocs(await resLoad()); } catch (e) { setSaveError(true); } };
     useEffect(() => {
-        reloadRes();
+        if (members === null) return;
+        (async () => { try { if (await storage.get("rian:memsync")) return; await Promise.all(members.map((m) => storage.set(`rian:mem:${m.id}`, memPub(m)))); await storage.set("rian:memsync", "1"); } catch (e) { } })();
+    }, [members === null]);
+    const winRef = useRef({ from: ymd(new Date(Date.now() - 30 * 864e5)), to: ymd(new Date(Date.now() + 120 * 864e5)) });
+    const reloadRes = async () => { try { setDocs(await resLoad(GYM.id, winRef.current.from, winRef.current.to)); } catch (e) { setSaveError(true); } };
+    const extendWin = (from, to) => { const w = winRef.current; if (from < w.from || to > w.to) { winRef.current = { from: from < w.from ? from : w.from, to: to > w.to ? to : w.to }; reloadRes(); } };
+    useEffect(() => {
+        migrateOld().catch(() => false).then(() => reloadRes());
         const f = () => { if (!document.hidden) reloadRes(); };
         document.addEventListener("visibilitychange", f);
         return () => document.removeEventListener("visibilitychange", f);
@@ -492,13 +499,13 @@ function App() {
         if (m.id !== id) return m;
         const nn = Math.max(0, n), old = m.tickets || 0;
         if (nn === old && m.tickets !== undefined) return m;
-        return { ...m, tickets: nn, tlog: [{ d: ymd(new Date()), v: nn - old, note: note || "調整" }, ...(m.tlog || [])].slice(0, 60) };
+        return { ...m, tickets: nn, tlog: [{ d: ymd(new Date()), v: nn - old, note: note || "調整" }, ...(m.tlog || [])].slice(0, 20) };
     }));
     const setTrial = (id, n, note) => persistMembers(members.map((m) => {
         if (m.id !== id) return m;
         const nn = Math.max(0, n), old = m.trial || 0;
         if (nn === old) return m;
-        return { ...m, trial: nn, tlog: [{ d: ymd(new Date()), v: nn - old, note: "体験:" + (note || "調整") }, ...(m.tlog || [])].slice(0, 60) };
+        return { ...m, trial: nn, tlog: [{ d: ymd(new Date()), v: nn - old, note: "体験:" + (note || "調整") }, ...(m.tlog || [])].slice(0, 20) };
     }));
     // 他のジムの会員さんが来た場合は、その会員さんの所属ジムのデータを直接書き換える
     const adjustRemote = async (mid, fn) => {
@@ -510,6 +517,7 @@ function App() {
             if (i < 0) continue;
             list[i] = fn(list[i]);
             await storage.set("rian:members", JSON.stringify(list), gy.id);
+            await storage.set(`rian:mem:${mid}`, memPub(list[i]), gy.id);
             return true;
         }
         return false;
@@ -525,7 +533,7 @@ function App() {
         const calc = (m) => {
             let cut = want, useTrial = false;
             if (cut) { if ((m.trial || 0) > 0) useTrial = true; else if (m.tickets !== undefined) cut = Math.min(cut, m.tickets); else cut = 0; }
-            const lg = (v, note) => [{ d: ymd(new Date()), v, note }, ...(m.tlog || [])].slice(0, 60);
+            const lg = (v, note) => [{ d: ymd(new Date()), v, note }, ...(m.tlog || [])].slice(0, 20);
             let m2 = m;
             if (useTrial) m2 = { ...m, trial: m.trial - 1, tlog: lg(-1, "体験:" + why) };
             else if (back && r.ctr) m2 = { ...m, trial: (m.trial || 0) + 1, tlog: lg(1, "体験:予約中に戻す") };
@@ -568,7 +576,7 @@ function App() {
                 const st = type === "store", hrs = [];
                 let skip = 0;
                 for (let x = from; x < to; x++) { if (busyFor(docs, date, x, st ? "*" : t)) skip++; else hrs.push(x); }
-                await Promise.all(hrs.map((x) => resPut(`b_${date}_${pad(x)}_${st ? "store" : t}`, st ? { t: "store", ti: title, c: color } : { t, ti: title, c: color }, true)));
+                await resPutMany(hrs.map((x) => ({ key: `b_${date}_${pad(x)}_${st ? "store" : t}`, obj: st ? { t: "store", ti: title, c: color } : { t, ti: title, c: color } })), true);
                 if (skip) alert(`${hrs.length}コマをブロックしました。${skip}コマは、すでに予約・ブロックがあるため入れていません。`);
                 return;
             }
@@ -582,7 +590,7 @@ function App() {
             if (skip) alert(`${ok}件を予約しました。${skip}件は、すでに予約・ブロックがあるため入れていません。`);
         });
     };
-    const onUnblock = (keys) => { if (confirm(`このブロック(${keys.length}コマぶん)を解除しますか?`)) mutate(() => Promise.all(keys.map(resDel))); };
+    const onUnblock = (keys) => { if (confirm(`このブロック(${keys.length}コマぶん)を解除しますか?`)) mutate(() => resDelMany(keys)); };
     const [trainers, setTrainers] = useState([DEF_T]);
     const [bulk, setBulk] = useState(false);
     const [showTr, setShowTr] = useState(false);
@@ -590,7 +598,7 @@ function App() {
     const saveTrainers = (n) => { setTrainers(n); storage.set("rian:trainers", JSON.stringify(n)).catch(() => setSaveError(true)); };
     const bulkBlock = async (items) => {
         let ok = 0;
-        await mutate(async () => { const res = await Promise.all(items.map((i) => resPut(i.key, i.obj, true))); ok = res.filter(Boolean).length; });
+        await mutate(async () => { ok = await resPutMany(items, true); });
         return ok;
     };
     const selectedMember = (members === null || members === void 0 ? void 0 : members.find((m) => m.id === selectedId)) || guests.find((m) => m.id === selectedId);
@@ -604,7 +612,7 @@ function App() {
         saveError && React.createElement("div", { className: "rn-error-banner" }, "\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u30D6\u30E9\u30A6\u30B6\u306E\u8A2D\u5B9A\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"),
         !selectedMember && ["home", "cal", "members"].includes(appView) && h(GymBar),
         !selectedMember && appView === "home" && h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" }, h(HomeView, { list: resList, onOpen: setSheet })),
-        !selectedMember && appView === "cal" && h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "16px 8px 100px" } }, h(CalView, { docs, list: resList, trainers, onOpen: setSheet, onSlot, onUnblock, onBulk: () => setBulk(true), onTrainers: () => setShowTr(true) })),
+        !selectedMember && appView === "cal" && h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "16px 8px 100px" } }, h(CalView, { docs, list: resList, trainers, onOpen: setSheet, onSlot, onUnblock, onRange: extendWin, onBulk: () => setBulk(true), onTrainers: () => setShowTr(true) })),
         !selectedMember && ["home", "cal", "members"].includes(appView) && h(BottomNav, { view: appView, setView: setAppView }),
         sheet && h(ResvSheet, { r: sheet, member: memberOf(sheet.m), onClose: () => setSheet(null), onRecord: (kind) => goRecord(sheet, kind), onStatus: (st) => changeStatus(sheet, st), onCancel: () => cancelResv(sheet), onTickets: (n) => setTickets(sheet.m, n) }),
         create && h(CreateSheet, { date: create.date, hour: create.h, members, trainers, onClose: () => setCreate(null), onSave: createResv }),
@@ -740,28 +748,91 @@ const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 const slotDate = (date, hr) => new Date(`${date}T${pad(hr)}:00:00`);
 const ST = { booked: "予約", done: "受講済み", noshow: "当日キャンセル" };
 const stOf = (r) => r.st || "booked";
-async function resLoad() {
-    let token = "", out = {};
-    do {
-        const r = await fetch(`${RES}?pageSize=300${token ? `&pageToken=${token}` : ""}`);
-        if (!r.ok) throw new Error("load");
-        const j = await r.json();
-        (j.documents || []).forEach((d) => {
-            try { out[d.name.split("/").pop()] = JSON.parse(d.fields.value.stringValue); } catch (e) { out[d.name.split("/").pop()] = {}; }
-        });
-        token = j.nextPageToken || "";
-    } while (token);
+// ---- 予約データ:1日=1ドキュメントにまとめて保存(読み取り回数を少なくする) ----
+const DOCS_ROOT = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+const DAYS = (gid) => `https://firestore.googleapis.com/v1/${DOCS_ROOT}/${gid}Days`;
+const itemKeyOf = (key) => { const p = key.split("_"); return p[0] === "d" ? "d" : `${p[0]}_${p[2]}${p[3] ? "_" + p[3] : ""}`; };
+const dateOfKey = (key) => key.split("_")[1];
+const flatKey = (ds, ik) => { const p = ik.split("_"); return p[0] === "d" ? `d_${ds}` : `${p[0]}_${ds}_${p[1]}${p[2] ? "_" + p[2] : ""}`; };
+const dayStr = (off) => ymd(new Date(Date.now() + off * 864e5));
+async function resLoad(gid = GYM.id, from = dayStr(-30), to = dayStr(120)) {
+    const coll = `${gid}Days`, ref = (d) => ({ referenceValue: `${DOCS_ROOT}/${coll}/${d}` });
+    const body = { structuredQuery: { from: [{ collectionId: coll }], where: { compositeFilter: { op: "AND", filters: [
+        { fieldFilter: { field: { fieldPath: "__name__" }, op: "GREATER_THAN_OR_EQUAL", value: ref(from) } },
+        { fieldFilter: { field: { fieldPath: "__name__" }, op: "LESS_THAN_OR_EQUAL", value: ref(to) } }] } }, orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }] } };
+    const r = await fetch(`https://firestore.googleapis.com/v1/${DOCS_ROOT}:runQuery`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("load");
+    const out = {};
+    (await r.json()).forEach((x) => {
+        if (!x.document) return;
+        const ds = x.document.name.split("/").pop();
+        let items = {}; try { items = JSON.parse(x.document.fields.value.stringValue); } catch (e) { }
+        Object.keys(items).forEach((ik) => { out[flatKey(ds, ik)] = items[ik]; });
+    });
     return out;
 }
-// onlyNew=true: 同じ枠がすでにあれば失敗する(二重予約の防止)
-async function resPut(id, obj, onlyNew) {
-    const r = await fetch(`${RES}/${id}${onlyNew ? "?currentDocument.exists=false" : ""}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(obj) } } }),
-    });
-    return r.ok;
+// 1日ぶんのデータを「読む→変える→書く」。同時に誰かが書いていたら、やり直す
+async function dayRMW(gid, ds, fn) {
+    for (let a = 0; a < 6; a++) {
+        const r = await fetch(`${DAYS(gid)}/${ds}`);
+        let items = {}, pre = "?currentDocument.exists=false";
+        if (r.ok) { const j = await r.json(); try { items = JSON.parse(j.fields.value.stringValue); } catch (e) { } pre = `?currentDocument.updateTime=${encodeURIComponent(j.updateTime)}`; }
+        else if (r.status !== 404) throw new Error("read");
+        const out = fn(items);
+        if (!out.changed) return out.result;
+        const w = Object.keys(out.items).length
+            ? await fetch(`${DAYS(gid)}/${ds}${pre}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(out.items) } } }) })
+            : (r.ok ? await fetch(`${DAYS(gid)}/${ds}${pre}`, { method: "DELETE" }) : { ok: true });
+        if (w.ok) return out.result;
+        await new Promise((res) => setTimeout(res, 150 + Math.random() * 250));
+    }
+    throw new Error("conflict");
 }
-async function resDel(id) { await fetch(`${RES}/${id}`, { method: "DELETE" }); }
+function clash(items, ik) {
+    if ("d" in items) return true;
+    const [p, hh, t] = ik.split("_");
+    if (p === "d") return false;
+    return Object.keys(items).some((k) => { const q = k.split("_"); return (q[0] === "r" || q[0] === "b") && q[1] === hh && (t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t); });
+}
+// 作れた件数を返す。onNew=true のときは、先に入っている枠・重なる枠は作らない
+async function resPutMany(entries, onlyNew, gid = GYM.id) {
+    const by = {};
+    entries.forEach((e) => { const d = dateOfKey(e.key); (by[d] = by[d] || []).push(e); });
+    const counts = await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
+        let n = 0;
+        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik))) return; items[ik] = e.obj; n++; });
+        return { items, changed: n > 0, result: n };
+    }).catch(() => 0)));
+    return counts.reduce((a, b) => a + b, 0);
+}
+async function resDelMany(keys, gid = GYM.id) {
+    const by = {};
+    keys.forEach((k) => { const d = dateOfKey(k); (by[d] = by[d] || []).push(k); });
+    await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
+        let changed = false;
+        by[ds].forEach((k) => { const ik = itemKeyOf(k); if (ik in items) { delete items[ik]; changed = true; } });
+        return { items, changed, result: 0 };
+    })));
+}
+const resPut = async (id, obj, onlyNew, gid) => (await resPutMany([{ key: id, obj }], onlyNew, gid)) === 1;
+const resDel = (id, gid) => resDelMany([id], gid);
+// 旧データ(1枠=1ドキュメント)を、1日=1ドキュメントに、一度だけ移す
+async function migrateOld() {
+    const flag = await fetch(`${DAYS(GYM.id)}/_migrated`);
+    if (flag.ok) return false;
+    const old = {}; let token = "";
+    do {
+        const r = await fetch(`${RES}?pageSize=300${token ? `&pageToken=${token}` : ""}`);
+        if (!r.ok) break;
+        const j = await r.json();
+        (j.documents || []).forEach((d) => { const k = d.name.split("/").pop(); if (!/^[rbd]_\d{4}-\d{2}-\d{2}/.test(k)) return; try { old[k] = JSON.parse(d.fields.value.stringValue); } catch (e) { old[k] = {}; } });
+        token = j.nextPageToken || "";
+    } while (token);
+    await resPutMany(Object.keys(old).map((k) => ({ key: k, obj: old[k] })), true);
+    await fetch(`${DAYS(GYM.id)}/_migrated?currentDocument.exists=false`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { value: { stringValue: "1" } } }) });
+    return true;
+}
+const memPub = (m) => { const { tlog, ...r } = m; return JSON.stringify(r); };
 function StTag({ r }) { return h("span", { className: "rv-tag " + stOf(r) }, ST[stOf(r)]); }
 function ResvRow({ r, onOpen, withDate }) {
     return h("button", { className: "rn-row rv-row", onClick: () => onOpen(r) },
@@ -793,7 +864,7 @@ function HomeView({ list, onOpen }) {
 }
 const DEF_T = GYM.id === "rian" ? { id: "t1", name: "吉永", color: "#16a34a" } : { id: "t1", name: "トレーナー", color: "#2563eb" };
 const PAL = ["#2563eb", "#9333ea", "#16a34a", "#ea580c", "#dc2626", "#0d9488", "#db2777", "#ca8a04"];
-function CalView({ docs, list, trainers, onOpen, onSlot, onUnblock, onBulk, onTrainers }) {
+function CalView({ docs, list, trainers, onOpen, onSlot, onUnblock, onBulk, onTrainers, onRange }) {
     const [ws, setWs] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
     const RH = 54, today = ymd(new Date());
     const col = (id) => (trainers.find((x) => x.id === id) || trainers[0]).color;
@@ -803,6 +874,7 @@ function CalView({ docs, list, trainers, onOpen, onSlot, onUnblock, onBulk, onTr
     const hrs = Array.from({ length: 14 }, (_, i) => 9 + i);
     const btn = { border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", borderRadius: 6, padding: "8px 12px", font: "inherit", fontSize: 14, cursor: "pointer" };
     const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    useEffect(() => { onRange(ymd(days[0]), ymd(days[6])); }, [ws]);
     const dayItems = (ds) => {
         const rs = [], bm = {};
         Object.keys(docs).forEach((k) => {
