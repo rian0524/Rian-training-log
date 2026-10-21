@@ -373,22 +373,74 @@ const RES = (gid) => `https://firestore.googleapis.com/v1/projects/${FIREBASE_PR
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const slotDate = (date, hr) => new Date(`${date}T${pad(hr)}:00:00`);
-async function resLoad(gid = GYM.id) {
-    let token = "", out = {};
-    do {
-        const r = await fetch(`${RES(gid)}?pageSize=300${token ? `&pageToken=${token}` : ""}`);
-        if (!r.ok) throw new Error("load");
-        const j = await r.json();
-        (j.documents || []).forEach((d) => { const k = d.name.split("/").pop(); try { out[k] = JSON.parse(d.fields.value.stringValue); } catch (e) { out[k] = {}; } });
-        token = j.nextPageToken || "";
-    } while (token);
+// ---- 予約データ:1日=1ドキュメントにまとめて保存(読み取り回数を少なくする) ----
+const DOCS_ROOT = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+const DAYS = (gid) => `https://firestore.googleapis.com/v1/${DOCS_ROOT}/${gid}Days`;
+const itemKeyOf = (key) => { const p = key.split("_"); return p[0] === "d" ? "d" : `${p[0]}_${p[2]}${p[3] ? "_" + p[3] : ""}`; };
+const dateOfKey = (key) => key.split("_")[1];
+const flatKey = (ds, ik) => { const p = ik.split("_"); return p[0] === "d" ? `d_${ds}` : `${p[0]}_${ds}_${p[1]}${p[2] ? "_" + p[2] : ""}`; };
+const dayStr = (off) => ymd(new Date(Date.now() + off * 864e5));
+async function resLoad(gid = GYM.id, from = dayStr(-1), to = dayStr(35)) {
+    const coll = `${gid}Days`, ref = (d) => ({ referenceValue: `${DOCS_ROOT}/${coll}/${d}` });
+    const body = { structuredQuery: { from: [{ collectionId: coll }], where: { compositeFilter: { op: "AND", filters: [
+        { fieldFilter: { field: { fieldPath: "__name__" }, op: "GREATER_THAN_OR_EQUAL", value: ref(from) } },
+        { fieldFilter: { field: { fieldPath: "__name__" }, op: "LESS_THAN_OR_EQUAL", value: ref(to) } }] } }, orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }] } };
+    const r = await fetch(`https://firestore.googleapis.com/v1/${DOCS_ROOT}:runQuery`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("load");
+    const out = {};
+    (await r.json()).forEach((x) => {
+        if (!x.document) return;
+        const ds = x.document.name.split("/").pop();
+        let items = {}; try { items = JSON.parse(x.document.fields.value.stringValue); } catch (e) { }
+        Object.keys(items).forEach((ik) => { out[flatKey(ds, ik)] = items[ik]; });
+    });
     return out;
 }
-async function resPut(id, obj, onlyNew, gid = GYM.id) {
-    const r = await fetch(`${RES(gid)}/${id}${onlyNew ? "?currentDocument.exists=false" : ""}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(obj) } } }) });
-    return r.ok;
+// 1日ぶんのデータを「読む→変える→書く」。同時に誰かが書いていたら、やり直す
+async function dayRMW(gid, ds, fn) {
+    for (let a = 0; a < 6; a++) {
+        const r = await fetch(`${DAYS(gid)}/${ds}`);
+        let items = {}, pre = "?currentDocument.exists=false";
+        if (r.ok) { const j = await r.json(); try { items = JSON.parse(j.fields.value.stringValue); } catch (e) { } pre = `?currentDocument.updateTime=${encodeURIComponent(j.updateTime)}`; }
+        else if (r.status !== 404) throw new Error("read");
+        const out = fn(items);
+        if (!out.changed) return out.result;
+        const w = Object.keys(out.items).length
+            ? await fetch(`${DAYS(gid)}/${ds}${pre}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(out.items) } } }) })
+            : (r.ok ? await fetch(`${DAYS(gid)}/${ds}${pre}`, { method: "DELETE" }) : { ok: true });
+        if (w.ok) return out.result;
+        await new Promise((res) => setTimeout(res, 150 + Math.random() * 250));
+    }
+    throw new Error("conflict");
 }
-async function resDel(id, gid = GYM.id) { await fetch(`${RES(gid)}/${id}`, { method: "DELETE" }); }
+function clash(items, ik) {
+    if ("d" in items) return true;
+    const [p, hh, t] = ik.split("_");
+    if (p === "d") return false;
+    return Object.keys(items).some((k) => { const q = k.split("_"); return (q[0] === "r" || q[0] === "b") && q[1] === hh && (t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t); });
+}
+// 作れた件数を返す。onNew=true のときは、先に入っている枠・重なる枠は作らない
+async function resPutMany(entries, onlyNew, gid = GYM.id) {
+    const by = {};
+    entries.forEach((e) => { const d = dateOfKey(e.key); (by[d] = by[d] || []).push(e); });
+    const counts = await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
+        let n = 0;
+        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik))) return; items[ik] = e.obj; n++; });
+        return { items, changed: n > 0, result: n };
+    }).catch(() => 0)));
+    return counts.reduce((a, b) => a + b, 0);
+}
+async function resDelMany(keys, gid = GYM.id) {
+    const by = {};
+    keys.forEach((k) => { const d = dateOfKey(k); (by[d] = by[d] || []).push(k); });
+    await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
+        let changed = false;
+        by[ds].forEach((k) => { const ik = itemKeyOf(k); if (ik in items) { delete items[ik]; changed = true; } });
+        return { items, changed, result: 0 };
+    })));
+}
+const resPut = async (id, obj, onlyNew, gid) => (await resPutMany([{ key: id, obj }], onlyNew, gid)) === 1;
+const resDel = (id, gid) => resDelMany([id], gid);
 // その枠が、そのトレーナーに対して埋まっているか(誰の予約かは、ここでは分からない)
 function busyFor(docs, ds, hr, t) {
     if (new Date(ds + "T00:00:00").getDay() === 0 || `d_${ds}` in docs) return true;
@@ -494,14 +546,14 @@ function App() {
             }
             try {
                 const [membersRes, recRes, bodyRes, trRes, resDocs] = await Promise.all([
-                    storage.get("rian:members"),
+                    storage.get(`rian:mem:${id}`),
                     storage.get(`rian:records:${id}`),
                     storage.get(`rian:body:${id}`),
                     Promise.all(GYMS.map((g) => storage.get("rian:trainers", g.id).catch(() => null))),
                     Promise.all(GYMS.map((g) => resLoad(g.id).catch(() => ({})))),
                 ]);
-                const members = membersRes ? JSON.parse(membersRes.value) : [];
-                const member = members.find((m) => m.id === id);
+                let member = membersRes ? JSON.parse(membersRes.value) : null;
+                if (!member) { const all = await storage.get("rian:members"); member = (all ? JSON.parse(all.value) : []).find((m) => m.id === id); }
                 if (!member) {
                     setStatus("notfound");
                     return;
