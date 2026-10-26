@@ -447,6 +447,13 @@ function busyFor(docs, ds, hr, t) {
     const hh = pad(hr);
     return Object.keys(docs).some((k) => { const p = k.split("_"); return (p[0] === "r" || p[0] === "b") && p[1] === ds && p[2] === hh && (!p[3] || p[3] === "store" || p[3] === t); });
 }
+// ---- トレーナーへのメール通知(Google Apps Scriptの中継) ----
+// Apps Scriptを公開してできたURLを、下の "" の中に入れる。空のあいだは、通知は送られない
+const NOTIFY_URL = "";
+function notify(gym, trainerId, subject, body) {
+    if (!NOTIFY_URL || !trainerId) return;
+    try { fetch(NOTIFY_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ gym, trainerId, subject, body }) }).catch(() => { }); } catch (e) { }
+}
 function ReserveView({ id, member, trainersBy, docsBy, reload }) {
     const [g, setG] = useState(GYM.id);
     const first = (x) => (trainersBy[x] || [defT(x)])[0].id;
@@ -457,6 +464,9 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
     const now = new Date(), tickets = (member.tickets || 0) + (member.trial || 0);
     const gName = (x) => (GYMS.find((y) => y.id === x) || {}).name;
     const tOf = (gg, t) => (trainersBy[gg] || []).find((x) => x.id === t) || {};
+    const slotText = (d, hr) => `${formatDateJP(d)} ${hr}:00〜${hr + 1}:00`;
+    const ping = (kind, gg, t, d, hr, extra) => notify(gg, t, `【${gName(gg)}】${kind}:${member.name}さん`,
+        [`会員さん:${member.name}さん`, `店舗:${gName(gg)}`, `トレーナー:${tOf(gg, t).name || ""}`, `日時:${slotText(d, hr)}`, ...(extra ? [extra] : []), "", "※アプリからの自動通知です。"].join("\n"));
     const mine = [];
     GYMS.forEach((gy) => { const dd = docsBy[gy.id] || {}; Object.keys(dd).forEach((k) => { if (k[0] === "r" && dd[k].m === id) { const [, d, hh] = k.split("_"); mine.push({ k, g: gy.id, d, hr: +hh, ...dd[k] }); } }); });
     const upcoming = mine.filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + pad(a.hr)).localeCompare(b.d + pad(b.hr)));
@@ -470,7 +480,7 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
     const cancel = async (r) => {
         if (!canCancel(r)) return alert(LATE_MSG);
         if (!confirm(`${formatDateJP(r.d)} ${r.hr}:00の予約をキャンセルしますか?`)) return;
-        setBusy(true); try { await resDel(r.k, r.g); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
+        setBusy(true); try { await resDel(r.k, r.g); ping("予約キャンセル", r.g, r.t, r.d, r.hr); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
         setBusy(false); await reload();
     };
     const startChange = (r) => { if (!canCancel(r)) return alert(LATE_MSG); setChg(r); setG(r.g); setTid(r.t || first(r.g)); window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
@@ -486,7 +496,14 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
         try {
             const ok = await resPut(`r_${sel}_${pad(hr)}_${tid}`, { m: id, n: member.name, t: tid }, true, g);
             if (!ok) alert("この時間は、先に別の予約が入りました。別の時間をお選びください。");
-            else { if (old) await resDel(old.k, old.g); setChg(null); alert(msg); }
+            else {
+                if (old) {
+                    await resDel(old.k, old.g);
+                    ping("予約変更", g, tid, sel, hr, `変更前:${gName(old.g)}・${slotText(old.d, old.hr)}`);
+                    if (old.g !== g || old.t !== tid) ping("予約変更(この枠は空きました)", old.g, old.t, old.d, old.hr, `変更後:${gName(g)}・${slotText(sel, hr)}`);
+                } else ping("新規予約", g, tid, sel, hr);
+                setChg(null); alert(msg);
+            }
         } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
         setBusy(false); await reload();
     };
