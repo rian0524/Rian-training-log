@@ -593,6 +593,9 @@ function App() {
     const onUnblock = (keys) => { if (confirm(`このブロック(${keys.length}コマぶん)を解除しますか?`)) mutate(() => resDelMany(keys)); };
     const [trainers, setTrainers] = useState([DEF_T]);
     const [bulk, setBulk] = useState(false);
+    const [mails, setMails] = useState({});
+    useEffect(() => { (async () => { try { const r = await storage.get("rian:trainerMail"); if (r) setMails(JSON.parse(r.value)); } catch (e) { } })(); }, []);
+    const saveMail = (id, v) => { const n = { ...mails, [id]: v }; setMails(n); storage.set("rian:trainerMail", JSON.stringify(n)).catch(() => setSaveError(true)); };
     const [showTr, setShowTr] = useState(false);
     useEffect(() => { (async () => { try { const r = await storage.get("rian:trainers"); if (r) { const v = JSON.parse(r.value); if (v.length) setTrainers(v); } } catch (e) { } })(); }, []);
     const saveTrainers = (n) => { setTrainers(n); storage.set("rian:trainers", JSON.stringify(n)).catch(() => setSaveError(true)); };
@@ -617,7 +620,7 @@ function App() {
         sheet && h(ResvSheet, { r: sheet, member: memberOf(sheet.m), onClose: () => setSheet(null), onRecord: (kind) => goRecord(sheet, kind), onStatus: (st) => changeStatus(sheet, st), onCancel: () => cancelResv(sheet), onTickets: (n) => setTickets(sheet.m, n) }),
         create && h(CreateSheet, { date: create.date, hour: create.h, members, trainers, onClose: () => setCreate(null), onSave: createResv }),
         bulk && h(BulkSheet, { docs, members, trainers, onClose: () => setBulk(false), onSave: bulkBlock }),
-        showTr && h(TrainerSheet, { trainers, onClose: () => setShowTr(false), onSave: saveTrainers }),
+        showTr && h(TrainerSheet, { trainers, mails, onMail: saveMail, onClose: () => setShowTr(false), onSave: saveTrainers }),
         !selectedMember && appView === "members" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
                 React.createElement("button", { onClick: () => setAppView("exerciseManager"), className: "rn-icon-btn-lg", "aria-label": "\u7A2E\u76EE\u7BA1\u7406" },
@@ -1044,7 +1047,7 @@ function BulkSheet({ docs, members, trainers, onClose, onSave }) {
                 done < slotsN && h("p", { className: "rn-faint", style: { fontSize: 13 } }, `${slotsN - done}コマは、先に入っていたため作成できませんでした。`),
                 foot(null, primary("閉じる", onClose)))));
 }
-function TrainerSheet({ trainers, onClose, onSave }) {
+function TrainerSheet({ trainers, mails, onMail, onClose, onSave }) {
     const [name, setName] = useState("");
     const [c, setC] = useState(PAL.find((p) => !trainers.some((x) => x.color === p)) || PAL[0]);
     const add = () => { if (!name.trim()) return; onSave([...trainers, { id: uid(), name: name.trim(), color: c }]); setName(""); };
@@ -1057,6 +1060,10 @@ function TrainerSheet({ trainers, onClose, onSave }) {
                 h("i", { style: { width: 18, height: 18, borderRadius: 4, background: x.color } }),
                 h("span", { style: { flex: 1, cursor: "pointer" }, onClick: () => { const n = prompt("名前を変更", x.name); if (n && n.trim()) onSave(trainers.map((y) => (y.id === x.id ? { ...y, name: n.trim() } : y))); } }, x.name + "  ✎"),
                 trainers.length > 1 && h("button", { className: "rn-icon-btn danger", onClick: () => { if (confirm(x.name + " を削除しますか?(予約は残ります)")) onSave(trainers.filter((y) => y.id !== x.id)); } }, "🗑"))),
+            h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "20px 0 6px" } }, "通知メール(会員さんの予約・変更・キャンセルの連絡先)"),
+            trainers.map((x) => h("div", { key: "m" + x.id, style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 8 } },
+                h("span", { style: { minWidth: 72, fontSize: 14 } }, x.name),
+                h("input", { type: "email", defaultValue: mails[x.id] || "", placeholder: "example@gmail.com", onBlur: (e) => onMail(x.id, e.target.value.trim()), className: "rn-field-input", style: { flex: 1 } }))),
             h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, "トレーナーを追加"),
             h("input", { value: name, onChange: (e) => setName(e.target.value), placeholder: "名前", className: "rn-field-input" }),
             h("div", { style: { display: "flex", gap: 10, margin: "14px 0", flexWrap: "wrap" } }, PAL.map((p) => h("button", { key: p, onClick: () => setC(p), style: { width: 34, height: 34, borderRadius: 999, background: p, border: c === p ? "3px solid var(--rn-text)" : "3px solid transparent", cursor: "pointer" } }))),
