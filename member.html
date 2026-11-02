@@ -449,7 +449,7 @@ function busyFor(docs, ds, hr, t) {
 }
 // ---- トレーナーへのメール通知(Google Apps Scriptの中継) ----
 // Apps Scriptを公開してできたURLを、下の "" の中に入れる。空のあいだは、通知は送られない
-const NOTIFY_URL = "";
+const NOTIFY_URL = "https://script.google.com/macros/s/AKfycbwMm-N8YUqkWc0rSnbjhBHiT5hOS6sUf2TdRlKi2swGTe5ZC4Wno4q9GNoPgrAn-NPVKQ/exec";
 function notify(gym, trainerId, subject, body) {
     if (!NOTIFY_URL || !trainerId) return;
     try { fetch(NOTIFY_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ gym, trainerId, subject, body }) }).catch(() => { }); } catch (e) { }
