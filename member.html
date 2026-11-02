@@ -442,8 +442,10 @@ async function resDelMany(keys, gid = GYM.id) {
 const resPut = async (id, obj, onlyNew, gid) => (await resPutMany([{ key: id, obj }], onlyNew, gid)) === 1;
 const resDel = (id, gid) => resDelMany([id], gid);
 // その枠が、そのトレーナーに対して埋まっているか(誰の予約かは、ここでは分からない)
-function busyFor(docs, ds, hr, t) {
+let FIXED = []; // 固定ブロック(毎週くり返す)。管理アプリが読み込んだ内容を入れる
+function busyFor(docs, ds, hr, t, rules) {
     if (new Date(ds + "T00:00:00").getDay() === 0 || `d_${ds}` in docs) return true;
+    if (t !== "*") { const wd = new Date(ds + "T00:00:00").getDay(); if ((rules || FIXED).some((r) => r.t === t && r.days.includes(wd) && hr >= r.from && hr < r.to)) return true; }
     const hh = pad(hr);
     return Object.keys(docs).some((k) => { const p = k.split("_"); return (p[0] === "r" || p[0] === "b") && p[1] === ds && p[2] === hh && (!p[3] || p[3] === "store" || p[3] === t); });
 }
@@ -454,7 +456,7 @@ function notify(gym, trainerId, subject, body) {
     if (!NOTIFY_URL || !trainerId) return;
     try { fetch(NOTIFY_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ gym, trainerId, subject, body }) }).catch(() => { }); } catch (e) { }
 }
-function ReserveView({ id, member, trainersBy, docsBy, reload }) {
+function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
     const [g, setG] = useState(GYM.id);
     const first = (x) => (trainersBy[x] || [defT(x)])[0].id;
     const [tid, setTid] = useState(first(GYM.id));
@@ -471,7 +473,7 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
     GYMS.forEach((gy) => { const dd = docsBy[gy.id] || {}; Object.keys(dd).forEach((k) => { if (k[0] === "r" && dd[k].m === id) { const [, d, hh] = k.split("_"); mine.push({ k, g: gy.id, d, hr: +hh, ...dd[k] }); } }); });
     const upcoming = mine.filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + pad(a.hr)).localeCompare(b.d + pad(b.hr)));
     const days7 = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return d; });
-    const hrsAll = Array.from({ length: 14 }, (_, i) => 9 + i);
+    const hrsAll = Array.from({ length: 15 }, (_, i) => 9 + i);
     const weekOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay()); return x; };
     const moveW = (n) => { const d = new Date(ws); d.setDate(d.getDate() + 7 * n); const lo = weekOf(new Date()); if (d < lo || (d - lo) / 864e5 >= 28) return; setWs(d); };
     const myAt = (ds, hr) => upcoming.some((r) => r.d === ds && r.hr === hr);
@@ -516,7 +518,7 @@ function ReserveView({ id, member, trainersBy, docsBy, reload }) {
         const base = { boxSizing: "border-box", height: 40, width: "100%", display: "block", border: "none", borderTop: "1px dotted var(--rn-border)", background: off ? "rgba(128,128,128,.14)" : "transparent", padding: 0, font: "inherit", fontSize: 14, textAlign: "center", lineHeight: "39px" };
         if (off) return h("div", { key: hr, style: base });
         if (myAt(ds, hr)) return h("div", { key: hr, style: { ...base, background: "rgba(47,84,235,.15)", color: "#2f54eb", fontSize: 10, fontWeight: 700 } }, "予約中");
-        const ok = slotDate(ds, hr) > now && !busyFor(docs, ds, hr, tid);
+        const ok = slotDate(ds, hr) > now && !busyFor(docs, ds, hr, tid, fixedBy[g] || []);
         return ok ? h("button", { key: hr, disabled: busy, onClick: () => pick(ds, hr), style: { ...base, color: "#2f54eb", cursor: "pointer" } }, "○") : h("div", { key: hr, style: { ...base, color: "var(--rn-faint)" } }, "×");
     };
     const f = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
@@ -551,7 +553,7 @@ function App() {
     const [records, setRecords] = useState([]);
     const [bodyRecords, setBodyRecords] = useState([]);
     const [tab, setTab] = useState("resv");
-    const [member, setMember] = useState(null), [trainersBy, setTrainersBy] = useState({}), [docsBy, setDocsBy] = useState({});
+    const [member, setMember] = useState(null), [trainersBy, setTrainersBy] = useState({}), [docsBy, setDocsBy] = useState({}), [fixedBy, setFixedBy] = useState({});
     const myId = new URLSearchParams(window.location.search).get("id");
     useEffect(() => {
         (async () => {
@@ -562,12 +564,13 @@ function App() {
                 return;
             }
             try {
-                const [membersRes, recRes, bodyRes, trRes, resDocs] = await Promise.all([
+                const [membersRes, recRes, bodyRes, trRes, resDocs, fixRes] = await Promise.all([
                     storage.get(`rian:mem:${id}`),
                     storage.get(`rian:records:${id}`),
                     storage.get(`rian:body:${id}`),
                     Promise.all(GYMS.map((g) => storage.get("rian:trainers", g.id).catch(() => null))),
                     Promise.all(GYMS.map((g) => resLoad(g.id).catch(() => ({})))),
+                    Promise.all(GYMS.map((g) => storage.get("rian:fixedBlocks", g.id).catch(() => null))),
                 ]);
                 let member = membersRes ? JSON.parse(membersRes.value) : null;
                 if (!member) { const all = await storage.get("rian:members"); member = (all ? JSON.parse(all.value) : []).find((m) => m.id === id); }
@@ -580,6 +583,7 @@ function App() {
                 const tb = {}, db = {};
                 GYMS.forEach((g, i) => { let tv = []; try { tv = trRes[i] ? JSON.parse(trRes[i].value) : []; } catch (e) { } tb[g.id] = tv.length ? tv : [defT(g.id)]; db[g.id] = resDocs[i]; });
                 setTrainersBy(tb); setDocsBy(db);
+                const fb = {}; GYMS.forEach((g, i) => { try { fb[g.id] = fixRes[i] ? JSON.parse(fixRes[i].value) : []; } catch (e) { fb[g.id] = []; } }); setFixedBy(fb);
                 setRecords(recRes ? JSON.parse(recRes.value) : []);
                 setBodyRecords(bodyRes ? JSON.parse(bodyRes.value) : []);
                 setStatus("ready");
@@ -620,7 +624,7 @@ function App() {
                 React.createElement("button", { className: `rn-tab ${tab === "body" ? "active" : ""}`, onClick: () => setTab("body") },
                     React.createElement(Icon, { size: 14 }, "\uD83D\uDCC8"),
                     "\u4F53\u7D44\u6210")),
-            tab === "resv" && member && h(ReserveView, { id: myId, member, trainersBy, docsBy, reload: async () => { const nd = {}; for (const g of GYMS) { try { nd[g.id] = await resLoad(g.id); } catch (e) { nd[g.id] = docsBy[g.id] || {}; } } setDocsBy(nd); } }),
+            tab === "resv" && member && h(ReserveView, { id: myId, member, trainersBy, docsBy, fixedBy, reload: async () => { const nd = {}; for (const g of GYMS) { try { nd[g.id] = await resLoad(g.id); } catch (e) { nd[g.id] = docsBy[g.id] || {}; } } setDocsBy(nd); } }),
             tab === "training" && React.createElement(TrainingLogView, { records: records }),
             tab === "body" && React.createElement(BodyView, { records: bodyRecords })),
         React.createElement("style", null, `.rn-pad { padding: 32px 24px 64px; }`)));
