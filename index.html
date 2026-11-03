@@ -617,7 +617,7 @@ function App() {
     }
     return (React.createElement("div", { className: "rn-app" + (!selectedMember && ["home", "cal", "members"].includes(appView) ? " has-nav" : "") },
         saveError && React.createElement("div", { className: "rn-error-banner" }, "\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u30D6\u30E9\u30A6\u30B6\u306E\u8A2D\u5B9A\u3092\u3054\u78BA\u8A8D\u306E\u3046\u3048\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"),
-        !selectedMember && ["home", "cal", "members"].includes(appView) && h(GymBar),
+        !selectedMember && ["home", "cal", "members"].includes(appView) && h(GymBar, { onSettings: appView === "members" ? null : () => setShowTr(true) }),
         !selectedMember && appView === "home" && h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" }, h(HomeView, { list: resList, onOpen: setSheet })),
         !selectedMember && appView === "cal" && h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "16px 8px 100px" } }, h(CalView, { docs, list: resList, trainers, fixed, onFixed: () => setShowFixed(true), onOpen: setSheet, onSlot, onUnblock, onRange: extendWin, onBulk: () => setBulk(true), onTrainers: () => setShowTr(true) })),
         !selectedMember && ["home", "cal", "members"].includes(appView) && h(BottomNav, { view: appView, setView: setAppView }),
@@ -914,7 +914,7 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
         h("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" } },
             h("button", { style: btn, onClick: () => moveW(-1) }, "‹"), h("button", { style: btn, onClick: goToday }, "今日"), h("button", { style: btn, onClick: () => moveW(1) }, "›"),
             h("b", { style: { fontWeight: 500, fontSize: 15, margin: "0 auto 0 6px" } }, `${fmt(days[0])}〜${fmt(days[6])}`),
-            h("button", { style: btn, onClick: onFixed }, "固定"), h("button", { style: btn, onClick: onBulk }, "一括作成"), h("button", { style: btn, onClick: onTrainers }, "⚙")),
+            h("button", { style: btn, onClick: onFixed }, "固定"), h("button", { style: btn, onClick: onBulk }, "一括作成")),
         h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 } }, trainers.map((x) => h("span", { key: x.id, style: { display: "flex", alignItems: "center", gap: 4 } }, h("i", { style: { width: 10, height: 10, borderRadius: 3, background: x.color, display: "inline-block" } }), x.name))),
         h("div", { style: { display: "grid", gridTemplateColumns: "34px repeat(7,1fr)", border: "1px solid var(--rn-border)", borderRadius: 6, overflow: "hidden", background: "var(--rn-card)" } },
             h("div", null), days.map((d, i) => h("div", { key: i, style: { textAlign: "center", fontSize: 11, fontWeight: 700, padding: "6px 0", borderLeft: "1px solid var(--rn-border)", color: i === 0 ? "#c0392b" : i === 6 ? "#2563eb" : "var(--rn-text)", background: ymd(d) === today ? "rgba(217,165,102,.25)" : "transparent" } }, d.getDate(), h("br"), "(" + "日月火水木金土"[i] + ")")),
@@ -1125,8 +1125,9 @@ function FixedSheet({ trainers, rules, onClose, onSave }) {
             lab("タイトル"), h("input", { value: title, onChange: (e) => setTitle(e.target.value), className: "rn-field-input" }),
             h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: add }, "固定ブロックを追加")));
 }
-function GymBar() {
-    return h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "12px 16px 0", display: "flex", justifyContent: "flex-end" } },
+function GymBar({ onSettings }) {
+    return h("div", { style: { maxWidth: 760, margin: "0 auto", padding: "12px 16px 0", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 } },
+        onSettings && h("button", { onClick: onSettings, "aria-label": "トレーナーと色の設定", style: { border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", borderRadius: 8, padding: "6px 12px", font: "inherit", fontSize: 14, cursor: "pointer" } }, "⚙"),
         h("select", { className: "rn-select", style: { width: "auto", padding: "6px 12px", fontSize: 14 }, value: GYM.id, onChange: (e) => { try { localStorage.setItem("rian:gym", e.target.value); } catch (err) { } const u = new URL(window.location.href); u.searchParams.set("gym", e.target.value); window.location.href = u.toString(); } }, GYMS.map((g) => h("option", { key: g.id, value: g.id }, g.name))));
 }
 function BottomNav({ view, setView }) {
