@@ -372,7 +372,11 @@ const defT = (gid) => (gid === "rian" ? { id: "t1", name: "吉永", color: "#16a
 const RES = (gid) => `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${gid}Reserve`;
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const slotDate = (date, hr) => new Date(`${date}T${pad(hr)}:00:00`);
+const slotDate = (date, hr) => { const d = new Date(`${date}T00:00:00`); d.setMinutes(Math.round(hr * 60)); return d; };
+const tmTok = (x) => `${pad(Math.floor(x))}${x % 1 ? ".5" : ""}`; // 20.5 -> "20.5"
+const fmtH = (x) => `${Math.floor(x)}:${x % 1 ? "30" : "00"}`;
+const MENU_LEN = { p50: 1, pair70: 1.5 }; // 予約が押さえる長さ(時間)
+const lenOf = (v) => ((v && v.ln) || 60) / 60;
 // ---- 予約データ:1日=1ドキュメントにまとめて保存(読み取り回数を少なくする) ----
 const DOCS_ROOT = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 const DAYS = (gid) => `https://firestore.googleapis.com/v1/${DOCS_ROOT}/${gid}Days`;
@@ -413,11 +417,18 @@ async function dayRMW(gid, ds, fn) {
     }
     throw new Error("conflict");
 }
-function clash(items, ik) {
+function clash(items, ik, obj) {
     if ("d" in items) return true;
-    const [p, hh, t] = ik.split("_");
+    const [p, tm, t] = ik.split("_");
     if (p === "d") return false;
-    return Object.keys(items).some((k) => { const q = k.split("_"); return (q[0] === "r" || q[0] === "b") && q[1] === hh && (t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t); });
+    const s = parseFloat(tm), l = lenOf(obj);
+    return Object.keys(items).some((k) => {
+        const q = k.split("_");
+        if (q[0] !== "r" && q[0] !== "b") return false;
+        if (!(t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t)) return false;
+        const s2 = parseFloat(q[1]), l2 = lenOf(items[k]);
+        return s < s2 + l2 && s2 < s + l;
+    });
 }
 // 作れた件数を返す。onNew=true のときは、先に入っている枠・重なる枠は作らない
 async function resPutMany(entries, onlyNew, gid = GYM.id) {
@@ -425,7 +436,7 @@ async function resPutMany(entries, onlyNew, gid = GYM.id) {
     entries.forEach((e) => { const d = dateOfKey(e.key); (by[d] = by[d] || []).push(e); });
     const counts = await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
         let n = 0;
-        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik))) return; items[ik] = e.obj; n++; });
+        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik, e.obj))) return; items[ik] = e.obj; n++; });
         return { items, changed: n > 0, result: n };
     }).catch(() => 0)));
     return counts.reduce((a, b) => a + b, 0);
@@ -443,12 +454,20 @@ const resPut = async (id, obj, onlyNew, gid) => (await resPutMany([{ key: id, ob
 const resDel = (id, gid) => resDelMany([id], gid);
 // その枠が、そのトレーナーに対して埋まっているか(誰の予約かは、ここでは分からない)
 let FIXED = []; // 固定ブロック(毎週くり返す)。管理アプリが読み込んだ内容を入れる
-function busyFor(docs, ds, hr, t, rules) {
-    if (new Date(ds + "T00:00:00").getDay() === 0 || `d_${ds}` in docs) return true;
-    if (t !== "*") { const wd = new Date(ds + "T00:00:00").getDay(); if ((rules || FIXED).some((r) => r.t === t && r.days.includes(wd) && hr >= r.from && hr < r.to)) return true; }
-    const hh = pad(hr);
-    return Object.keys(docs).some((k) => { const p = k.split("_"); return (p[0] === "r" || p[0] === "b") && p[1] === ds && p[2] === hh && (!p[3] || p[3] === "store" || p[3] === t); });
+function busyAt(docs, ds, s, len, t, rules) {
+    const wd = new Date(ds + "T00:00:00").getDay();
+    if (wd === 0 || `d_${ds}` in docs) return true;
+    if (s < 9 || s + len > 24) return true;
+    if (t !== "*" && (rules || FIXED).some((r) => r.t === t && r.days.includes(wd) && s < r.to && s + len > r.from)) return true;
+    return Object.keys(docs).some((k) => {
+        const q = k.split("_");
+        if ((q[0] !== "r" && q[0] !== "b") || q[1] !== ds) return false;
+        if (!(t === "*" || !q[3] || q[3] === "store" || q[3] === t)) return false;
+        const s2 = parseFloat(q[2]), l2 = lenOf(docs[k]);
+        return s < s2 + l2 && s2 < s + len;
+    });
 }
+function busyFor(docs, ds, hr, t, rules) { return busyAt(docs, ds, hr, 1, t, rules); }
 // ---- トレーナーへのメール通知(Google Apps Scriptの中継) ----
 // Apps Scriptを公開してできたURLを、下の "" の中に入れる。空のあいだは、通知は送られない
 const NOTIFY_URL = "https://script.google.com/macros/s/AKfycbwMm-N8YUqkWc0rSnbjhBHiT5hOS6sUf2TdRlKi2swGTe5ZC4Wno4q9GNoPgrAn-NPVKQ/exec";
@@ -464,11 +483,12 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
     const [ws, setWs] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
     const [chg, setChg] = useState(null), [busy, setBusy] = useState(false);
     const [menu, setMenu] = useState("p50"), [hasNote, setHasNote] = useState(false), [note, setNote] = useState("");
+    const LEN = MENU_LEN[menu] || 1;
     const trainers = trainersBy[g] || [defT(g)], docs = docsBy[g] || {};
     const now = new Date(), tickets = (member.tickets || 0) + (member.trial || 0);
     const gName = (x) => (GYMS.find((y) => y.id === x) || {}).name;
     const tOf = (gg, t) => (trainersBy[gg] || []).find((x) => x.id === t) || {};
-    const jp = (d, hr) => { const [y, m, dd] = d.split("-").map(Number); return `${y}年${m}月${dd}日${pad(hr)}:00`; };
+    const jp = (d, hr) => { const [y, m, dd] = d.split("-").map(Number); return `${y}年${m}月${dd}日${pad(Math.floor(hr))}:${hr % 1 ? "30" : "00"}`; };
     const ping = (kind, gg, t, d, hr, mn, nt, extra) => {
         const nm = member.name + "様", when = jp(d, hr);
         const subject = kind === "空き" ? `${nm}の予約変更(${when}の枠が空きました)` : `${nm}が${when}に予約${{ 取得: "取得", 取消: "取消", 変更: "変更" }[kind]}`;
@@ -476,25 +496,24 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
         notify(gg, t, subject, body);
     };
     const mine = [];
-    GYMS.forEach((gy) => { const dd = docsBy[gy.id] || {}; Object.keys(dd).forEach((k) => { if (k[0] === "r" && dd[k].m === id) { const [, d, hh] = k.split("_"); mine.push({ k, g: gy.id, d, hr: +hh, ...dd[k] }); } }); });
-    const upcoming = mine.filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + pad(a.hr)).localeCompare(b.d + pad(b.hr)));
+    GYMS.forEach((gy) => { const dd = docsBy[gy.id] || {}; Object.keys(dd).forEach((k) => { if (k[0] === "r" && dd[k].m === id) { const [, d, hh] = k.split("_"); mine.push({ k, g: gy.id, d, hr: parseFloat(hh), ...dd[k] }); } }); });
+    const upcoming = mine.filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + tmTok(a.hr)).localeCompare(b.d + tmTok(b.hr)));
     const days7 = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return d; });
-    const hrsAll = Array.from({ length: 15 }, (_, i) => 9 + i);
+    const hrsAll = Array.from({ length: 30 }, (_, i) => 9 + i / 2);
     const weekOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay()); return x; };
     const moveW = (n) => { const d = new Date(ws); d.setDate(d.getDate() + 7 * n); const lo = weekOf(new Date()); if (d < lo || (d - lo) / 864e5 >= 28) return; setWs(d); };
-    const myAt = (ds, hr) => upcoming.some((r) => r.d === ds && r.hr === hr);
     const canCancel = (r) => now <= deadlineOf(r.d);
     const switchG = (x) => { setG(x); setTid(first(x)); };
     const cancel = async (r) => {
         if (!canCancel(r)) return alert(LATE_MSG);
-        if (!confirm(`${formatDateJP(r.d)} ${r.hr}:00の予約をキャンセルしますか?`)) return;
+        if (!confirm(`${formatDateJP(r.d)} ${fmtH(r.hr)}の予約をキャンセルしますか?`)) return;
         setBusy(true); try { await resDel(r.k, r.g); ping("取消", r.g, r.t, r.d, r.hr, r.mn, r.nt); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
         setBusy(false); await reload();
     };
     const startChange = (r) => { if (!canCancel(r)) return alert(LATE_MSG); setChg(r); setG(r.g); setTid(r.t || first(r.g)); setMenu(r.mn || "p50"); setNote(r.nt || ""); setHasNote(!!r.nt); window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
     const pick = async (sel, hr) => {
         if (new Date() > deadlineOf(sel)) return alert("ご予約は、ご利用日の前日の正午までお受けしています。\n当日や直前のご予約は、お手数をおかけしますが、トレーナーへ直接ご連絡くださいますようお願いいたします。");
-        const when = `${gName(g)} ${formatDateJP(sel)} ${hr}:00(${(trainers.find((x) => x.id === tid) || {}).name || ""})`;
+        const when = `${gName(g)} ${formatDateJP(sel)} ${fmtH(hr)}(${(trainers.find((x) => x.id === tid) || {}).name || ""})`;
         if (chg) { if (!confirm(`${when}に変更しますか?`)) return; }
         else {
             if (upcoming.length >= tickets) return alert("残りチケットの枚数ぶん、すでに予約が入っています。");
@@ -503,7 +522,7 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
         const msg = chg ? "変更しました。" : "予約しました。", old = chg, nts = hasNote ? note.trim() : "";
         setBusy(true);
         try {
-            const ok = await resPut(`r_${sel}_${pad(hr)}_${tid}`, { m: id, n: member.name, t: tid, mn: menu, nt: nts }, true, g);
+            const ok = await resPut(`r_${sel}_${tmTok(hr)}_${tid}`, { m: id, n: member.name, t: tid, mn: menu, nt: nts, ln: LEN * 60 }, true, g);
             if (!ok) alert("この時間は、先に別の予約が入りました。別の時間をお選びください。");
             else {
                 if (old) {
@@ -522,27 +541,29 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
     const lb = (t) => h("div", { className: "rn-muted", style: { fontSize: 12, margin: "0 0 6px" } }, t);
     const cell = (d, i, hr) => {
         const ds = ymd(d), off = i === 0 || `d_${ds}` in docs;
-        const base = { boxSizing: "border-box", height: 40, width: "100%", display: "block", border: "none", borderTop: "1px dotted var(--rn-border)", background: off ? "rgba(128,128,128,.14)" : "transparent", padding: 0, font: "inherit", fontSize: 14, textAlign: "center", lineHeight: "39px" };
+        const base = { boxSizing: "border-box", height: 28, width: "100%", display: "block", border: "none", borderTop: hr % 1 ? "none" : "1px dotted var(--rn-border)", background: off ? "rgba(128,128,128,.14)" : "transparent", padding: 0, font: "inherit", fontSize: 13, textAlign: "center", lineHeight: "27px" };
         if (off) return h("div", { key: hr, style: base });
-        if (myAt(ds, hr)) return h("div", { key: hr, style: { ...base, background: "rgba(47,84,235,.15)", color: "#2f54eb", fontSize: 10, fontWeight: 700 } }, "予約中");
-        const ok = now <= deadlineOf(ds) && slotDate(ds, hr) > now && !busyFor(docs, ds, hr, tid, fixedBy[g] || []);
+        const mineHere = upcoming.find((r) => r.d === ds && hr >= r.hr && hr < r.hr + lenOf(r));
+        if (mineHere) return h("div", { key: hr, style: { ...base, background: "rgba(47,84,235,.15)", color: "#2f54eb", fontSize: 10, fontWeight: 700 } }, hr === mineHere.hr ? "予約中" : "");
+        const ok = now <= deadlineOf(ds) && slotDate(ds, hr) > now && !busyAt(docs, ds, hr, LEN, tid, fixedBy[g] || []) && !upcoming.some((r) => r.d === ds && hr < r.hr + lenOf(r) && r.hr < hr + LEN);
         return ok ? h("button", { key: hr, disabled: busy, onClick: () => pick(ds, hr), style: { ...base, color: "#2f54eb", cursor: "pointer" } }, "○") : h("div", { key: hr, style: { ...base, color: "var(--rn-faint)" } }, "×");
     };
     const f = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
     return h("div", null,
         hd("ご予約中"),
         upcoming.length ? upcoming.map((r) => h("div", { key: r.g + r.k, className: "rn-row", style: { padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", outline: chg && chg.k === r.k && chg.g === r.g ? "2px solid #2f54eb" : "none" } },
-            h("div", { style: { flex: 1, minWidth: 150 } }, h("div", { style: { fontSize: 15 } }, `${formatDateJP(r.d)} ${r.hr}:00〜${r.hr + 1}:00`),
+            h("div", { style: { flex: 1, minWidth: 150 } }, h("div", { style: { fontSize: 15 } }, `${formatDateJP(r.d)} ${fmtH(r.hr)}〜${fmtH(r.hr + lenOf(r))}`),
                 h("div", { className: "rn-muted", style: { fontSize: 13, display: "flex", alignItems: "center", gap: 6 } }, h("i", { style: { width: 9, height: 9, borderRadius: 3, background: tOf(r.g, r.t).color || "#999", display: "inline-block" } }), `${gName(r.g)}・${tOf(r.g, r.t).name || "担当トレーナー"}${r.mn ? "・" + MENUS[r.mn] : ""}`)),
             sm("変更", () => startChange(r)), sm("キャンセル", () => cancel(r), true))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "予約はありません。"),
         hd(chg ? "変更先を選んでください" : "新しく予約する"),
-        chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${chg.hr}:00`, sm("変更をやめる", () => setChg(null))),
+        chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${fmtH(chg.hr)}`, sm("変更をやめる", () => setChg(null))),
         !chg && tickets <= upcoming.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
             h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, GYMS.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(所属店舗)" : ""))))),
             trainers.length > 1 && h("div", { style: { marginBottom: 12 } }, lb("トレーナー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => pill(tid === x.id, x.name, () => setTid(x.id), x.id)))),
             h("div", { style: { marginBottom: 12 } }, lb("メニュー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, Object.keys(MENUS).map((k) => pill(menu === k, MENUS[k], () => setMenu(k), k)))),
             h("div", { style: { marginBottom: 12 } }, lb("備考(トレーナーへ伝えたいこと)"), h("div", { style: { display: "flex", gap: 8 } }, pill(!hasNote, "なし", () => setHasNote(false), "n0"), pill(hasNote, "あり", () => setHasNote(true), "n1")),
                 hasNote && h("textarea", { value: note, onChange: (e) => setNote(e.target.value), maxLength: 200, rows: 3, placeholder: "例:肩に違和感があります", className: "rn-field-input", style: { marginTop: 10, width: "100%", boxSizing: "border-box", fontFamily: "inherit" } })),
+            h("p", { className: "rn-faint", style: { fontSize: 12, margin: "-4px 0 12px", lineHeight: 1.7 } }, "開始時間は30分きざみで選べます。パーソナルは60分、ペアトレーニングは90分の枠を確保します。"),
             lb("日にち・時間(○をタップして予約)"),
             h("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 } },
                 sm("‹", () => moveW(-1)), sm("今日", () => setWs(weekOf(new Date()))), sm("›", () => moveW(1)),
@@ -550,7 +571,7 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
             h("div", { style: { display: "grid", gridTemplateColumns: "34px repeat(7,1fr)", border: "1px solid var(--rn-border)", borderRadius: 6, overflow: "hidden", background: "var(--rn-card)" } },
                 h("div", null),
                 days7.map((d, i) => h("div", { key: i, style: { textAlign: "center", fontSize: 11, fontWeight: 700, padding: "6px 0", borderLeft: "1px solid var(--rn-border)", color: i === 0 ? "#c0392b" : i === 6 ? "#2563eb" : "var(--rn-text)", background: ymd(d) === ymd(now) ? "rgba(217,165,102,.25)" : "transparent" } }, d.getDate(), h("br"), "(" + "日月火水木金土"[i] + ")")),
-                h("div", null, hrsAll.map((hr) => h("div", { key: hr, style: { boxSizing: "border-box", height: 40, fontSize: 10, color: "var(--rn-soft)", textAlign: "right", paddingRight: 3, paddingTop: 2, borderTop: "1px dotted transparent" } }, hr + ":00"))),
+                h("div", null, hrsAll.map((hr) => h("div", { key: hr, style: { boxSizing: "border-box", height: 28, fontSize: 10, color: "var(--rn-soft)", textAlign: "right", paddingRight: 3, paddingTop: 2, borderTop: "1px dotted transparent" } }, hr % 1 ? "" : hr + ":00"))),
                 days7.map((d, i) => h("div", { key: i, style: { borderLeft: "1px solid var(--rn-border)" } }, hrsAll.map((hr) => cell(d, i, hr))))),
             h("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 10 } }, "×は、予約できない時間です。ご予約・変更・キャンセルは、前日の正午までお手続きいただけます。")));
 }
