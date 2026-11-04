@@ -492,7 +492,7 @@ function App() {
         document.addEventListener("visibilitychange", f);
         return () => document.removeEventListener("visibilitychange", f);
     }, []);
-    const resList = useMemo(() => Object.keys(docs).filter((k) => k[0] === "r").map((k) => { const [, d, hh] = k.split("_"); return { k, d, h: +hh, ...docs[k] }; }).sort((a, b) => (a.k < b.k ? -1 : 1)), [docs]);
+    const resList = useMemo(() => Object.keys(docs).filter((k) => k[0] === "r").map((k) => { const [, d, hh] = k.split("_"); return { k, d, h: parseFloat(hh), ...docs[k] }; }).sort((a, b) => (a.k < b.k ? -1 : 1)), [docs]);
     const mutate = async (fn) => { try { await fn(); } catch (e) { setSaveError(true); } await reloadRes(); };
     const memberOf = (id) => (members || []).find((x) => x.id === id);
     const setTickets = (id, n, note) => persistMembers(members.map((m) => {
@@ -543,7 +543,7 @@ function App() {
         let res = { cut: 0, useTrial: false };
         if (mem) { res = calc(mem); if (res.m2 !== mem) persistMembers(members.map((x) => (x.id === mem.id ? res.m2 : x))); }
         else { try { await adjustRemote(r.m, (m) => { res = calc(m); return res.m2; }); } catch (e) { setSaveError(true); } }
-        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, mn: r.mn, nt: r.nt, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : res.cut, ctr: st !== "booked" && res.useTrial ? 1 : undefined }));
+        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, mn: r.mn, nt: r.nt, ln: r.ln, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : res.cut, ctr: st !== "booked" && res.useTrial ? 1 : undefined }));
     };
     const cancelResv = (r) => { if (confirm("この予約を取り消しますか?")) { mutate(() => resDel(r.k)); setSheet(null); } };
     const goRecord = async (r, kind) => {
@@ -569,7 +569,7 @@ function App() {
         else if (confirm("ブロックを解除しますか?")) mutate(() => resDel(`b_${date}_${pad(hr)}`));
     };
     const onDayBlock = (date) => mutate(() => (`d_${date}` in docs ? resDel(`d_${date}`) : resPut(`d_${date}`, {}, true)));
-    const createResv = async ({ type, mid, weeks, t, from, to, title, color }) => {
+    const createResv = async ({ type, mid, weeks, t, from, to, title, color, mn }) => {
         const { date, h: hr } = create; setCreate(null);
         await mutate(async () => {
             if (type !== "resv") {
@@ -584,8 +584,9 @@ function App() {
             for (let i = 0; i < weeks; i++) {
                 const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + 7 * i);
                 const ds = ymd(d);
-                if (busyFor(docs, ds, hr, t)) { skip++; continue; }
-                (await resPut(`r_${ds}_${pad(hr)}_${t}`, { m: mid, n: mem.name, t }, true)) ? ok++ : skip++;
+                const len = MENU_LEN[mn] || 1;
+                if (busyAt(docs, ds, hr, len, t)) { skip++; continue; }
+                (await resPut(`r_${ds}_${tmTok(hr)}_${t}`, { m: mid, n: mem.name, t, mn, ln: len * 60 }, true)) ? ok++ : skip++;
             }
             if (skip) alert(`${ok}件を予約しました。${skip}件は、すでに予約・ブロックがあるため入れていません。`);
         });
@@ -753,7 +754,11 @@ const logoImg = (w) => h("img", { src: LOGOS[GYM.id], alt: GYM.name, style: { wi
 const RES = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${GYM.id}Reserve`;
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const slotDate = (date, hr) => new Date(`${date}T${pad(hr)}:00:00`);
+const slotDate = (date, hr) => { const d = new Date(`${date}T00:00:00`); d.setMinutes(Math.round(hr * 60)); return d; };
+const tmTok = (x) => `${pad(Math.floor(x))}${x % 1 ? ".5" : ""}`; // 20.5 -> "20.5"
+const fmtH = (x) => `${Math.floor(x)}:${x % 1 ? "30" : "00"}`;
+const MENU_LEN = { p50: 1, pair70: 1.5 }; // 予約が押さえる長さ(時間)
+const lenOf = (v) => ((v && v.ln) || 60) / 60;
 const ST = { booked: "予約", done: "受講済み", noshow: "当日キャンセル" };
 const stOf = (r) => r.st || "booked";
 // ---- 予約データ:1日=1ドキュメントにまとめて保存(読み取り回数を少なくする) ----
@@ -796,11 +801,18 @@ async function dayRMW(gid, ds, fn) {
     }
     throw new Error("conflict");
 }
-function clash(items, ik) {
+function clash(items, ik, obj) {
     if ("d" in items) return true;
-    const [p, hh, t] = ik.split("_");
+    const [p, tm, t] = ik.split("_");
     if (p === "d") return false;
-    return Object.keys(items).some((k) => { const q = k.split("_"); return (q[0] === "r" || q[0] === "b") && q[1] === hh && (t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t); });
+    const s = parseFloat(tm), l = lenOf(obj);
+    return Object.keys(items).some((k) => {
+        const q = k.split("_");
+        if (q[0] !== "r" && q[0] !== "b") return false;
+        if (!(t === "store" || q[2] === undefined || q[2] === "store" || q[2] === t)) return false;
+        const s2 = parseFloat(q[1]), l2 = lenOf(items[k]);
+        return s < s2 + l2 && s2 < s + l;
+    });
 }
 // 作れた件数を返す。onNew=true のときは、先に入っている枠・重なる枠は作らない
 async function resPutMany(entries, onlyNew, gid = GYM.id) {
@@ -808,7 +820,7 @@ async function resPutMany(entries, onlyNew, gid = GYM.id) {
     entries.forEach((e) => { const d = dateOfKey(e.key); (by[d] = by[d] || []).push(e); });
     const counts = await Promise.all(Object.keys(by).map((ds) => dayRMW(gid, ds, (items) => {
         let n = 0;
-        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik))) return; items[ik] = e.obj; n++; });
+        by[ds].forEach((e) => { const ik = itemKeyOf(e.key); if (onlyNew && (ik in items || clash(items, ik, e.obj))) return; items[ik] = e.obj; n++; });
         return { items, changed: n > 0, result: n };
     }).catch(() => 0)));
     return counts.reduce((a, b) => a + b, 0);
@@ -844,7 +856,7 @@ const memPub = (m) => { const { tlog, ...r } = m; return JSON.stringify(r); };
 function StTag({ r }) { return h("span", { className: "rv-tag " + stOf(r) }, ST[stOf(r)]); }
 function ResvRow({ r, onOpen, withDate }) {
     return h("button", { className: "rn-row rv-row", onClick: () => onOpen(r) },
-        h("span", { className: "rv-time" }, (withDate ? formatDateShort(r.d) + " " : "") + r.h + ":00"),
+        h("span", { className: "rv-time" }, (withDate ? formatDateShort(r.d) + " " : "") + fmtH(r.h)),
         h("span", { style: { flex: 1, textAlign: "left" } }, r.n || "会員"),
         h(StTag, { r }));
 }
@@ -852,8 +864,8 @@ function HomeView({ list, onOpen }) {
     const now = new Date(), t = ymd(now), tm = ymd(new Date(now.getTime() + 864e5));
     const booked = (r) => stOf(r) === "booked";
     const today = list.filter((r) => r.d === t), tomorrow = list.filter((r) => r.d === tm);
-    const left = today.filter((r) => booked(r) && slotDate(r.d, r.h + 1) > now);
-    const todo = list.filter((r) => booked(r) && slotDate(r.d, r.h + 1) <= now);
+    const left = today.filter((r) => booked(r) && slotDate(r.d, r.h + lenOf(r)) > now);
+    const todo = list.filter((r) => booked(r) && slotDate(r.d, r.h + lenOf(r)) <= now);
     const cnt = (s) => today.filter((r) => stOf(r) === s).length;
     const card = (label, n, sub) => h("div", { className: "rn-row rv-card" },
         h("div", { className: "rn-muted", style: { fontSize: 13 } }, label),
@@ -862,7 +874,7 @@ function HomeView({ list, onOpen }) {
     return h("div", null,
         h("header", { style: { marginBottom: 24, textAlign: "center" } }, logoImg(170), h("h1", { className: "rn-serif", style: { fontSize: 22 } }, "ホーム")),
         h("div", { className: "rv-cards" },
-            card("本日の予約", today.length, left.length ? `残り${left.length}件・次 ${left[0].h}:00` : ""),
+            card("本日の予約", today.length, left.length ? `残り${left.length}件・次 ${fmtH(left[0].h)}` : ""),
             card("明日の予約", tomorrow.length, ""),
             card("要対応", todo.length, "受講済みの入力待ち")),
         todo.length > 0 && h("div", null, h("h2", { className: "rv-h" }, "要対応"), todo.map((r) => h(ResvRow, { key: r.k, r, onOpen, withDate: true }))),
@@ -880,6 +892,7 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
     const moveW = (n) => { const d = new Date(ws); d.setDate(d.getDate() + 7 * n); setWs(d); };
     const goToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); setWs(d); };
     const hrs = Array.from({ length: 15 }, (_, i) => 9 + i);
+    const halves = Array.from({ length: 30 }, (_, i) => 9 + i / 2);
     const btn = { border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", borderRadius: 6, padding: "8px 12px", font: "inherit", fontSize: 14, cursor: "pointer" };
     const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
     useEffect(() => { onRange(ymd(days[0]), ymd(days[6])); }, [ws]);
@@ -888,15 +901,15 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
         Object.keys(docs).forEach((k) => {
             const [p, d, hh, sf] = k.split("_");
             if (d !== ds || (p !== "r" && p !== "b")) return;
-            const v = docs[k], hr = +hh, tk = sf || v.t || "store";
-            if (p === "r") rs.push({ kind: "r", s: hr, e: hr + 1, k, tk, ...v });
-            else { const g = `${tk}|${v.c || ""}|${v.ti || ""}`; (bm[g] = bm[g] || []).push({ hr, k, tk, v }); }
+            const v = docs[k], hr = parseFloat(hh), tk = sf || v.t || "store";
+            if (p === "r") rs.push({ kind: "r", s: hr, e: hr + lenOf(v), k, tk, ...v });
+            else { const g = `${tk}|${v.c || ""}|${v.ti || ""}`; (bm[g] = bm[g] || []).push({ hr, e: hr + lenOf(v), k, tk, v }); }
         });
         const bands = [];
         Object.values(bm).forEach((arr) => {
             arr.sort((a, b) => a.hr - b.hr);
             let cur = null;
-            arr.forEach((x) => { if (cur && x.hr === cur.e) { cur.e++; cur.keys.push(x.k); } else { cur = { kind: "b", s: x.hr, e: x.hr + 1, keys: [x.k], tk: x.tk, c: x.v.c, ti: x.v.ti }; bands.push(cur); } });
+            arr.forEach((x) => { if (cur && Math.abs(x.hr - cur.e) < 0.01) { cur.e = x.e; cur.keys.push(x.k); } else { cur = { kind: "b", s: x.hr, e: x.e, keys: [x.k], tk: x.tk, c: x.v.c, ti: x.v.ti }; bands.push(cur); } });
         });
         const wdOf = new Date(ds + "T00:00:00").getDay();
         fixed.forEach((r) => { if (r.days.includes(wdOf)) bands.push({ kind: "b", s: r.from, e: Math.min(r.to, 24), keys: [], tk: r.t, c: "#bdbdbd", ti: r.title || "固定ブロック", fixed: r.id }); });
@@ -906,7 +919,7 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
     };
     const tile = (ds, it, lane, n) => {
         const pos = { position: "absolute", top: (it.s - 9) * RH + 1, height: (it.e - it.s) * RH - 2, left: `${lane * 100 / n}%`, width: `${100 / n}%`, boxSizing: "border-box", overflow: "hidden", borderRadius: 4, padding: "3px 2px", font: "inherit", fontSize: 10, lineHeight: 1.25, textAlign: "left", cursor: "pointer" };
-        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut, ctr: it.ctr, mn: it.mn, nt: it.nt }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員") + (it.mn === "pair70" ? "(ペア)" : ""));
+        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut, ctr: it.ctr, mn: it.mn, nt: it.nt, ln: it.ln }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員") + (it.mn === "pair70" ? "(ペア)" : ""));
         const c = it.c || "#bdbdbd", bc = it.tk === "store" ? "#666" : col(it.tk);
         return h("button", { key: it.fixed ? "f" + it.fixed + ds : it.keys[0], onClick: () => (it.fixed ? onFixed() : onUnblock(it.keys)), style: { ...pos, background: `repeating-linear-gradient(45deg,${c},${c} 5px,${c}bb 5px,${c}bb 10px)`, border: `2px solid ${bc}`, color: "#222" } }, it.ti || "ブロック");
     };
@@ -922,7 +935,7 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
             days.map((d, i) => {
                 const ds = ymd(d), off = i === 0 || `d_${ds}` in docs, { items, store, n } = dayItems(ds);
                 return h("div", { key: i, style: { position: "relative", height: hrs.length * RH, borderLeft: "1px solid var(--rn-border)", background: off ? "rgba(128,128,128,.18)" : "transparent" } },
-                    hrs.map((hr) => h("button", { key: hr, disabled: off, onClick: () => onSlot(ds, hr, "free"), style: { position: "absolute", top: (hr - 9) * RH, left: 0, right: 0, height: RH, border: "none", borderTop: "1px dotted var(--rn-border)", background: "transparent", padding: 0, cursor: off ? "default" : "pointer" } })),
+                    halves.map((hr) => h("button", { key: hr, disabled: off, onClick: () => onSlot(ds, hr, "free"), style: { position: "absolute", top: (hr - 9) * RH, left: 0, right: 0, height: RH / 2, border: "none", borderTop: hr % 1 ? "none" : "1px dotted var(--rn-border)", background: "transparent", padding: 0, cursor: off ? "default" : "pointer" } })),
                     !off && store.map((b) => tile(ds, b, 0, 1)), !off && items.map((it) => tile(ds, it, it.lane, n)));
             })),
         h("p", { className: "rn-faint", style: { fontSize: 12, marginTop: 8 } }, "空いている枠をタップで予約、ブロックの帯をタップで解除できます。日曜は定休日です。"));
@@ -930,19 +943,19 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
 function CreateSheet({ date, hour, members, trainers, onClose, onSave }) {
     const [tab, setTab] = useState("resv");
     const [mid, setMid] = useState(members[0] ? members[0].id : ""), [weeks, setWeeks] = useState(1), [t, setT] = useState(trainers[0].id);
-    const [from, setFrom] = useState(hour), [to, setTo] = useState(Math.min(hour + 1, 24));
+    const [from, setFrom] = useState(Math.floor(hour)), [to, setTo] = useState(Math.min(Math.floor(hour) + 1, 24)), [mn, setMn] = useState("p50");
     const [title, setTitle] = useState("ブロック"), [color, setColor] = useState(BCOL[0]);
     const lab = (x) => h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, x);
     const opts = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => h("option", { key: n, value: n }, n + ":00"));
     const save = () => {
-        if (tab === "resv") return onSave({ type: "resv", mid, weeks, t });
+        if (tab === "resv") return onSave({ type: "resv", mid, weeks, t, mn });
         if (to <= from) return alert("終わりの時間は、はじめの時間より後にしてください。");
         onSave({ type: tab, t, from, to, title, color });
     };
     return h("div", { className: "rn-modal-backdrop", style: { alignItems: "flex-end" }, onClick: onClose },
         h("div", { className: "rn-modal-panel", style: { borderRadius: "4px 4px 0 0", maxHeight: "94vh", overflowY: "auto" }, onClick: (e) => e.stopPropagation() },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
-                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, tab === "resv" ? `${formatDateJP(date)} ${hour}:00〜` : formatDateJP(date)),
+                h("h2", { className: "rn-serif", style: { fontSize: 18 } }, tab === "resv" ? `${formatDateJP(date)} ${fmtH(hour)}〜` : formatDateJP(date)),
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
             h("div", { style: { display: "flex", background: "var(--rn-card)", borderRadius: 10, padding: 5, gap: 4 } },
                 [["resv", "予約"], ["block", "スタッフのブロック"], ["store", "店舗のブロック"]].map(([k, l]) => h("button", { key: k, onClick: () => setTab(k), style: { flex: 1, padding: "10px 4px", border: "none", borderRadius: 8, background: tab === k ? "var(--rn-page)" : "transparent", color: "var(--rn-text)", font: "inherit", fontSize: 13, fontWeight: tab === k ? 700 : 400, cursor: "pointer" } }, l))),
@@ -950,6 +963,8 @@ function CreateSheet({ date, hour, members, trainers, onClose, onSave }) {
             tab === "resv" ? (members.length === 0 ? h("p", { className: "rn-faint" }, "予約を入れるには、先に「会員」タブから会員さんを追加してください。") : h("div", null,
                 lab("会員さん"),
                 h("select", { className: "rn-select", value: mid, onChange: (e) => setMid(e.target.value) }, members.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
+                lab("メニュー"),
+                h("select", { className: "rn-select", value: mn, onChange: (e) => setMn(e.target.value) }, h("option", { value: "p50" }, "50分パーソナル(60分の枠)"), h("option", { value: "pair70" }, "70分ペアトレーニング(90分の枠)")),
                 lab("くり返し(同じ曜日・同じ時間)"),
                 h("select", { className: "rn-select", value: weeks, onChange: (e) => setWeeks(+e.target.value) }, [1, 2, 3, 4, 6, 8, 12, 16, 24].map((n) => h("option", { key: n, value: n }, n === 1 ? "1回のみ" : `毎週 ${n}回`))),
                 h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: save }, "予約を入れる")))
@@ -1084,7 +1099,7 @@ function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
                 h("h2", { className: "rn-serif", style: { fontSize: 18 } }, (r.n || "会員") + " さん"),
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
-            h("p", { className: "rn-soft", style: { margin: "0 0 8px" } }, `${formatDateJP(r.d)} ${r.h}:00〜${r.h + 1}:00`),
+            h("p", { className: "rn-soft", style: { margin: "0 0 8px" } }, `${formatDateJP(r.d)} ${fmtH(r.h)}〜${fmtH(r.h + lenOf(r))}`),
             h(StTag, { r }),
             (r.mn || r.nt) && h("div", { className: "rn-muted", style: { fontSize: 13, lineHeight: 1.7, margin: "10px 0 0", whiteSpace: "pre-wrap" } }, (r.mn ? "メニュー:" + ({ p50: "50分パーソナル", pair70: "70分ペアトレーニング" }[r.mn] || "") : "") + (r.mn && r.nt ? "\n" : "") + (r.nt ? "備考:" + r.nt : "")),
             member && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", margin: "16px 0 6px" } }, h("span", { className: "rn-muted" }, "残りチケット"), h("b", null, (member.trial || 0) > 0 ? `体験チケット ${member.trial}枚` : member.tickets === undefined ? "未設定" : member.tickets + "枚")),
@@ -1097,7 +1112,7 @@ function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets
 function FixedSheet({ trainers, rules, onClose, onSave }) {
     const [t, setT] = useState(trainers[0].id), [days, setDays] = useState([1, 2, 3, 4, 5]), [from, setFrom] = useState(9), [to, setTo] = useState(19), [title, setTitle] = useState("固定ブロック");
     const WN = "日月火水木金土";
-    const opts = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => h("option", { key: n, value: n }, n + ":00"));
+    const opts = (a, b) => { const o = []; for (let v = a; v <= b; v += 0.5) o.push(h("option", { key: v, value: v }, fmtH(v))); return o; };
     const tr = (id) => trainers.find((x) => x.id === id) || {};
     const lab = (x) => h("label", { className: "rn-muted", style: { fontSize: 12, display: "block", margin: "16px 0 6px" } }, x);
     const add = () => {
@@ -1113,7 +1128,7 @@ function FixedSheet({ trainers, rules, onClose, onSave }) {
             h("p", { className: "rn-faint", style: { fontSize: 12, lineHeight: 1.7, margin: "0 0 12px" } }, "毎週くり返す時間を、トレーナーごとに登録します。ずっと有効で、会員さんの予約画面でも「×」になります。解除するまで、毎回ブロックを作る必要はありません。"),
             rules.length ? rules.map((r) => h("div", { key: r.id, className: "rn-row", style: { display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14 } },
                 h("i", { style: { width: 14, height: 14, borderRadius: 4, background: tr(r.t).color || "#999", flexShrink: 0 } }),
-                h("span", { style: { flex: 1 } }, `${tr(r.t).name || ""}:${r.days.map((d) => WN[d]).join("")} ${r.from}:00〜${r.to}:00`, h("span", { className: "rn-muted", style: { fontSize: 12, marginLeft: 6 } }, r.title)),
+                h("span", { style: { flex: 1 } }, `${tr(r.t).name || ""}:${r.days.map((d) => WN[d]).join("")} ${fmtH(r.from)}〜${fmtH(r.to)}`, h("span", { className: "rn-muted", style: { fontSize: 12, marginLeft: 6 } }, r.title)),
                 h("button", { className: "rn-icon-btn danger", onClick: () => { if (confirm("この固定ブロックを削除しますか?")) onSave(rules.filter((x) => x.id !== r.id)); } }, "🗑"))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "まだ登録がありません。"),
             h("h3", { className: "rn-serif", style: { fontSize: 15, margin: "22px 0 0" } }, "追加する"),
             lab("トレーナー"), h("select", { className: "rn-select", value: t, onChange: (e) => setT(e.target.value) }, trainers.map((x) => h("option", { key: x.id, value: x.id }, x.name))),
@@ -1121,8 +1136,8 @@ function FixedSheet({ trainers, rules, onClose, onSave }) {
             h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } }, [1, 2, 3, 4, 5, 6].map((n) => { const on = days.includes(n); return h("button", { key: n, onClick: () => setDays(on ? days.filter((y) => y !== n) : [...days, n]), style: { width: 42, height: 42, borderRadius: 8, border: on ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "#2f54eb" : "var(--rn-card)", color: on ? "#fff" : "var(--rn-text)", font: "inherit", cursor: "pointer" } }, WN[n]); }),
                 h("button", { onClick: () => setDays([1, 2, 3, 4, 5]), style: { padding: "0 12px", height: 42, borderRadius: 8, border: "1px solid var(--rn-border)", background: "var(--rn-card)", color: "var(--rn-text)", font: "inherit", cursor: "pointer" } }, "平日")),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-                h("div", null, lab("はじめの時間"), h("select", { className: "rn-select", value: from, onChange: (e) => setFrom(+e.target.value) }, opts(9, 23))),
-                h("div", null, lab("終わりの時間"), h("select", { className: "rn-select", value: to, onChange: (e) => setTo(+e.target.value) }, opts(10, 24)))),
+                h("div", null, lab("はじめの時間"), h("select", { className: "rn-select", value: from, onChange: (e) => setFrom(+e.target.value) }, opts(9, 23.5))),
+                h("div", null, lab("終わりの時間"), h("select", { className: "rn-select", value: to, onChange: (e) => setTo(+e.target.value) }, opts(9.5, 24)))),
             lab("タイトル"), h("input", { value: title, onChange: (e) => setTitle(e.target.value), className: "rn-field-input" }),
             h("button", { className: "rn-btn-primary", style: { marginTop: 20 }, onClick: add }, "固定ブロックを追加")));
 }
@@ -1137,12 +1152,20 @@ function BottomNav({ view, setView }) {
 }
 // その枠が、そのトレーナーに対して埋まっているか(t="*"は誰かが入っていれば埋まり)
 let FIXED = []; // 固定ブロック(毎週くり返す)。管理アプリが読み込んだ内容を入れる
-function busyFor(docs, ds, hr, t, rules) {
-    if (new Date(ds + "T00:00:00").getDay() === 0 || `d_${ds}` in docs) return true;
-    if (t !== "*") { const wd = new Date(ds + "T00:00:00").getDay(); if ((rules || FIXED).some((r) => r.t === t && r.days.includes(wd) && hr >= r.from && hr < r.to)) return true; }
-    const hh = pad(hr);
-    return Object.keys(docs).some((k) => { const p = k.split("_"); return (p[0] === "r" || p[0] === "b") && p[1] === ds && p[2] === hh && (t === "*" || !p[3] || p[3] === "store" || p[3] === t); });
+function busyAt(docs, ds, s, len, t, rules) {
+    const wd = new Date(ds + "T00:00:00").getDay();
+    if (wd === 0 || `d_${ds}` in docs) return true;
+    if (s < 9 || s + len > 24) return true;
+    if (t !== "*" && (rules || FIXED).some((r) => r.t === t && r.days.includes(wd) && s < r.to && s + len > r.from)) return true;
+    return Object.keys(docs).some((k) => {
+        const q = k.split("_");
+        if ((q[0] !== "r" && q[0] !== "b") || q[1] !== ds) return false;
+        if (!(t === "*" || !q[3] || q[3] === "store" || q[3] === t)) return false;
+        const s2 = parseFloat(q[2]), l2 = lenOf(docs[k]);
+        return s < s2 + l2 && s2 < s + len;
+    });
 }
+function busyFor(docs, ds, hr, t, rules) { return busyAt(docs, ds, hr, 1, t, rules); }
 const menuCard = (ic, title, sub, fn) => h("button", { onClick: fn, className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
     h("span", { className: "rn-avatar", style: { width: 44, height: 44, fontSize: 20 } }, ic),
     h("span", null, h("span", { style: { display: "block", fontSize: 16, marginBottom: 2 } }, title), h("span", { className: "rn-muted", style: { display: "block", fontSize: 14 } }, sub)));
