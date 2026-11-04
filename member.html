@@ -456,19 +456,25 @@ function notify(gym, trainerId, subject, body) {
     if (!NOTIFY_URL || !trainerId) return;
     try { fetch(NOTIFY_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ gym, trainerId, subject, body }) }).catch(() => { }); } catch (e) { }
 }
+const MENUS = { p50: "50分パーソナル", pair70: "70分ペアトレーニング" };
 function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
     const [g, setG] = useState(GYM.id);
     const first = (x) => (trainersBy[x] || [defT(x)])[0].id;
     const [tid, setTid] = useState(first(GYM.id));
     const [ws, setWs] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
     const [chg, setChg] = useState(null), [busy, setBusy] = useState(false);
+    const [menu, setMenu] = useState("p50"), [hasNote, setHasNote] = useState(false), [note, setNote] = useState("");
     const trainers = trainersBy[g] || [defT(g)], docs = docsBy[g] || {};
     const now = new Date(), tickets = (member.tickets || 0) + (member.trial || 0);
     const gName = (x) => (GYMS.find((y) => y.id === x) || {}).name;
     const tOf = (gg, t) => (trainersBy[gg] || []).find((x) => x.id === t) || {};
-    const slotText = (d, hr) => `${formatDateJP(d)} ${hr}:00〜${hr + 1}:00`;
-    const ping = (kind, gg, t, d, hr, extra) => notify(gg, t, `【${gName(gg)}】${kind}:${member.name}さん`,
-        [`会員さん:${member.name}さん`, `店舗:${gName(gg)}`, `トレーナー:${tOf(gg, t).name || ""}`, `日時:${slotText(d, hr)}`, ...(extra ? [extra] : []), "", "※アプリからの自動通知です。"].join("\n"));
+    const jp = (d, hr) => { const [y, m, dd] = d.split("-").map(Number); return `${y}年${m}月${dd}日${pad(hr)}:00`; };
+    const ping = (kind, gg, t, d, hr, mn, nt, extra) => {
+        const nm = member.name + "様", when = jp(d, hr);
+        const subject = kind === "空き" ? `${nm}の予約変更(${when}の枠が空きました)` : `${nm}が${when}に予約${{ 取得: "取得", 取消: "取消", 変更: "変更" }[kind]}`;
+        const body = ["◼︎予約内容", `会員名:${nm}`, `店舗名:${gName(gg)}`, `スタッフ名:${tOf(gg, t).name || ""}`, `予約メニュー:${MENUS[mn] || "未選択"}`, `開始時間:${when}`, `備考:${nt || "なし"}`, ...(extra ? ["", extra] : [])].join("\n");
+        notify(gg, t, subject, body);
+    };
     const mine = [];
     GYMS.forEach((gy) => { const dd = docsBy[gy.id] || {}; Object.keys(dd).forEach((k) => { if (k[0] === "r" && dd[k].m === id) { const [, d, hh] = k.split("_"); mine.push({ k, g: gy.id, d, hr: +hh, ...dd[k] }); } }); });
     const upcoming = mine.filter((r) => (r.st || "booked") === "booked" && slotDate(r.d, r.hr) > now).sort((a, b) => (a.d + pad(a.hr)).localeCompare(b.d + pad(b.hr)));
@@ -482,10 +488,10 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
     const cancel = async (r) => {
         if (!canCancel(r)) return alert(LATE_MSG);
         if (!confirm(`${formatDateJP(r.d)} ${r.hr}:00の予約をキャンセルしますか?`)) return;
-        setBusy(true); try { await resDel(r.k, r.g); ping("予約キャンセル", r.g, r.t, r.d, r.hr); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
+        setBusy(true); try { await resDel(r.k, r.g); ping("取消", r.g, r.t, r.d, r.hr, r.mn, r.nt); } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
         setBusy(false); await reload();
     };
-    const startChange = (r) => { if (!canCancel(r)) return alert(LATE_MSG); setChg(r); setG(r.g); setTid(r.t || first(r.g)); window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
+    const startChange = (r) => { if (!canCancel(r)) return alert(LATE_MSG); setChg(r); setG(r.g); setTid(r.t || first(r.g)); setMenu(r.mn || "p50"); setNote(r.nt || ""); setHasNote(!!r.nt); window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
     const pick = async (sel, hr) => {
         if (new Date() > deadlineOf(sel)) return alert("ご予約は、ご利用日の前日の正午までお受けしています。\n当日や直前のご予約は、お手数をおかけしますが、トレーナーへ直接ご連絡くださいますようお願いいたします。");
         const when = `${gName(g)} ${formatDateJP(sel)} ${hr}:00(${(trainers.find((x) => x.id === tid) || {}).name || ""})`;
@@ -494,18 +500,18 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
             if (upcoming.length >= tickets) return alert("残りチケットの枚数ぶん、すでに予約が入っています。");
             if (!confirm(`${when}で予約しますか?`)) return;
         }
-        const msg = chg ? "変更しました。" : "予約しました。", old = chg;
+        const msg = chg ? "変更しました。" : "予約しました。", old = chg, nts = hasNote ? note.trim() : "";
         setBusy(true);
         try {
-            const ok = await resPut(`r_${sel}_${pad(hr)}_${tid}`, { m: id, n: member.name, t: tid }, true, g);
+            const ok = await resPut(`r_${sel}_${pad(hr)}_${tid}`, { m: id, n: member.name, t: tid, mn: menu, nt: nts }, true, g);
             if (!ok) alert("この時間は、先に別の予約が入りました。別の時間をお選びください。");
             else {
                 if (old) {
                     await resDel(old.k, old.g);
-                    ping("予約変更", g, tid, sel, hr, `変更前:${gName(old.g)}・${slotText(old.d, old.hr)}`);
-                    if (old.g !== g || old.t !== tid) ping("予約変更(この枠は空きました)", old.g, old.t, old.d, old.hr, `変更後:${gName(g)}・${slotText(sel, hr)}`);
-                } else ping("新規予約", g, tid, sel, hr);
-                setChg(null); alert(msg);
+                    ping("変更", g, tid, sel, hr, menu, nts, `変更前:${gName(old.g)}・${jp(old.d, old.hr)}`);
+                    if (old.g !== g || old.t !== tid) ping("空き", old.g, old.t, old.d, old.hr, old.mn, old.nt, `変更後:${gName(g)}・${jp(sel, hr)}`);
+                } else ping("取得", g, tid, sel, hr, menu, nts);
+                setChg(null); setHasNote(false); setNote(""); alert(msg);
             }
         } catch (e) { alert("通信に失敗しました。もう一度お試しください。"); }
         setBusy(false); await reload();
@@ -527,13 +533,16 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
         hd("ご予約中"),
         upcoming.length ? upcoming.map((r) => h("div", { key: r.g + r.k, className: "rn-row", style: { padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", outline: chg && chg.k === r.k && chg.g === r.g ? "2px solid #2f54eb" : "none" } },
             h("div", { style: { flex: 1, minWidth: 150 } }, h("div", { style: { fontSize: 15 } }, `${formatDateJP(r.d)} ${r.hr}:00〜${r.hr + 1}:00`),
-                h("div", { className: "rn-muted", style: { fontSize: 13, display: "flex", alignItems: "center", gap: 6 } }, h("i", { style: { width: 9, height: 9, borderRadius: 3, background: tOf(r.g, r.t).color || "#999", display: "inline-block" } }), `${gName(r.g)}・${tOf(r.g, r.t).name || "担当トレーナー"}`)),
+                h("div", { className: "rn-muted", style: { fontSize: 13, display: "flex", alignItems: "center", gap: 6 } }, h("i", { style: { width: 9, height: 9, borderRadius: 3, background: tOf(r.g, r.t).color || "#999", display: "inline-block" } }), `${gName(r.g)}・${tOf(r.g, r.t).name || "担当トレーナー"}${r.mn ? "・" + MENUS[r.mn] : ""}`)),
             sm("変更", () => startChange(r)), sm("キャンセル", () => cancel(r), true))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "予約はありません。"),
         hd(chg ? "変更先を選んでください" : "新しく予約する"),
         chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${chg.hr}:00`, sm("変更をやめる", () => setChg(null))),
         !chg && tickets <= upcoming.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
             h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, GYMS.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(所属店舗)" : ""))))),
             trainers.length > 1 && h("div", { style: { marginBottom: 12 } }, lb("トレーナー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => pill(tid === x.id, x.name, () => setTid(x.id), x.id)))),
+            h("div", { style: { marginBottom: 12 } }, lb("メニュー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, Object.keys(MENUS).map((k) => pill(menu === k, MENUS[k], () => setMenu(k), k)))),
+            h("div", { style: { marginBottom: 12 } }, lb("備考(トレーナーへ伝えたいこと)"), h("div", { style: { display: "flex", gap: 8 } }, pill(!hasNote, "なし", () => setHasNote(false), "n0"), pill(hasNote, "あり", () => setHasNote(true), "n1")),
+                hasNote && h("textarea", { value: note, onChange: (e) => setNote(e.target.value), maxLength: 200, rows: 3, placeholder: "例:肩に違和感があります", className: "rn-field-input", style: { marginTop: 10, width: "100%", boxSizing: "border-box", fontFamily: "inherit" } })),
             lb("日にち・時間(○をタップして予約)"),
             h("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 } },
                 sm("‹", () => moveW(-1)), sm("今日", () => setWs(weekOf(new Date()))), sm("›", () => moveW(1)),
