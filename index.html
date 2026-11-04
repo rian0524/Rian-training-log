@@ -543,7 +543,7 @@ function App() {
         let res = { cut: 0, useTrial: false };
         if (mem) { res = calc(mem); if (res.m2 !== mem) persistMembers(members.map((x) => (x.id === mem.id ? res.m2 : x))); }
         else { try { await adjustRemote(r.m, (m) => { res = calc(m); return res.m2; }); } catch (e) { setSaveError(true); } }
-        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : res.cut, ctr: st !== "booked" && res.useTrial ? 1 : undefined }));
+        mutate(() => resPut(r.k, { m: r.m, n: r.n, t: r.t, mn: r.mn, nt: r.nt, st: st === "booked" ? undefined : st, cut: st === "booked" ? 0 : res.cut, ctr: st !== "booked" && res.useTrial ? 1 : undefined }));
     };
     const cancelResv = (r) => { if (confirm("この予約を取り消しますか?")) { mutate(() => resDel(r.k)); setSheet(null); } };
     const goRecord = async (r, kind) => {
@@ -906,7 +906,7 @@ function CalView({ docs, list, trainers, fixed, onFixed, onOpen, onSlot, onUnblo
     };
     const tile = (ds, it, lane, n) => {
         const pos = { position: "absolute", top: (it.s - 9) * RH + 1, height: (it.e - it.s) * RH - 2, left: `${lane * 100 / n}%`, width: `${100 / n}%`, boxSizing: "border-box", overflow: "hidden", borderRadius: 4, padding: "3px 2px", font: "inherit", fontSize: 10, lineHeight: 1.25, textAlign: "left", cursor: "pointer" };
-        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut, ctr: it.ctr }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員"));
+        if (it.kind === "r") return h("button", { key: it.k, onClick: () => onOpen({ k: it.k, d: ds, h: it.s, m: it.m, n: it.n, t: it.t, st: it.st, cut: it.cut, ctr: it.ctr, mn: it.mn, nt: it.nt }), style: { ...pos, background: col(it.t || it.tk), color: "#fff", fontWeight: 700, border: "1px solid rgba(255,255,255,.5)", opacity: stOf(it) === "booked" ? 1 : 0.55 } }, (stOf(it) === "done" ? "✓" : stOf(it) === "noshow" ? "✕" : "") + (it.n || "会員") + (it.mn === "pair70" ? "(ペア)" : ""));
         const c = it.c || "#bdbdbd", bc = it.tk === "store" ? "#666" : col(it.tk);
         return h("button", { key: it.fixed ? "f" + it.fixed + ds : it.keys[0], onClick: () => (it.fixed ? onFixed() : onUnblock(it.keys)), style: { ...pos, background: `repeating-linear-gradient(45deg,${c},${c} 5px,${c}bb 5px,${c}bb 10px)`, border: `2px solid ${bc}`, color: "#222" } }, it.ti || "ブロック");
     };
@@ -1086,6 +1086,7 @@ function ResvSheet({ r, member, onClose, onRecord, onStatus, onCancel, onTickets
                 h("button", { onClick: onClose, className: "rn-icon-btn-lg" }, h(Icon, { size: 24 }, "✕"))),
             h("p", { className: "rn-soft", style: { margin: "0 0 8px" } }, `${formatDateJP(r.d)} ${r.h}:00〜${r.h + 1}:00`),
             h(StTag, { r }),
+            (r.mn || r.nt) && h("div", { className: "rn-muted", style: { fontSize: 13, lineHeight: 1.7, margin: "10px 0 0", whiteSpace: "pre-wrap" } }, (r.mn ? "メニュー:" + ({ p50: "50分パーソナル", pair70: "70分ペアトレーニング" }[r.mn] || "") : "") + (r.mn && r.nt ? "\n" : "") + (r.nt ? "備考:" + r.nt : "")),
             member && h("div", { className: "rn-row", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", margin: "16px 0 6px" } }, h("span", { className: "rn-muted" }, "残りチケット"), h("b", null, (member.trial || 0) > 0 ? `体験チケット ${member.trial}枚` : member.tickets === undefined ? "未設定" : member.tickets + "枚")),
             !member && h("p", { className: "rn-faint", style: { fontSize: 13, lineHeight: 1.7, margin: "14px 0 0" } }, "他のジムに所属する会員さんです。記録とチケットは、所属ジム側に保存・反映されます。"),
             btn("トレーニング記録", () => onRecord("training")),
