@@ -1173,10 +1173,11 @@ const menuCard = (ic, title, sub, fn) => h("button", { onClick: fn, className: "
 function TicketView({ member, trainers, onBack, onChange, onTrial, onPerm }) {
     const [n, setN] = useState(8), [note, setNote] = useState(""), [to, setTo] = useState("");
     const allM = Object.keys(MENUS), menusOn = member.menus && member.menus.length ? member.menus : allM;
-    const allT = trainers.map((x) => x.id), okT = member.okTr && member.okTr[GYM.id], trOn = okT && okT.length ? okT.filter((id) => allT.includes(id)) : allT;
+    const [others, setOthers] = useState({});
+    useEffect(() => { GYMS.filter((g) => g.id !== GYM.id).forEach(async (g) => { try { const r = await storage.get("rian:trainers", g.id); setOthers((o) => ({ ...o, [g.id]: r ? JSON.parse(r.value) : [] })); } catch (e) { } }); }, []);
     const perm = (on, label, fn, key) => h("button", { key, onClick: fn, style: { padding: "10px 14px", borderRadius: 8, border: on ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "#2f54eb" : "var(--rn-card)", color: on ? "#fff" : "var(--rn-text)", font: "inherit", fontSize: 14, cursor: "pointer" } }, label);
     const toggleMenu = (k) => { const nx = menusOn.includes(k) ? menusOn.filter((x) => x !== k) : [...menusOn, k]; if (!nx.length) return; onPerm({ menus: nx.length === allM.length ? null : nx }); };
-    const toggleTr = (id) => { const nx = trOn.includes(id) ? trOn.filter((x) => x !== id) : [...trOn, id]; if (!nx.length) return; onPerm({ okTr: { ...(member.okTr || {}), [GYM.id]: nx.length === allT.length ? null : nx } }); };
+    const toggleTr = (gid, list, on, id) => { const nx = on.includes(id) ? on.filter((x) => x !== id) : [...on, id]; onPerm({ okTr: { ...(member.okTr || {}), [gid]: list.every((x) => nx.includes(x.id)) ? null : nx } }); };
     const cur = member.tickets, log = member.tlog || [];
     const chip = (v) => h("button", { key: v, onClick: () => setN(v), style: { padding: "8px 14px", borderRadius: 8, border: n === v ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: n === v ? "#2f54eb" : "var(--rn-card)", color: n === v ? "#fff" : "var(--rn-text)", font: "inherit", cursor: "pointer" } }, v + "枚");
     return h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
@@ -1202,9 +1203,12 @@ function TicketView({ member, trainers, onBack, onChange, onTrial, onPerm }) {
         h("h2", { className: "rv-h" }, "予約の設定"),
         h("div", { className: "rn-muted", style: { fontSize: 12, margin: "0 0 6px" } }, "予約できるメニュー"),
         h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, allM.map((k) => perm(menusOn.includes(k), MENUS[k], () => toggleMenu(k), k))),
-        h("div", { className: "rn-muted", style: { fontSize: 12, margin: "16px 0 6px" } }, `予約できるトレーナー(${GYM.name})`),
-        h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => perm(trOn.includes(x.id), x.name, () => toggleTr(x.id), x.id))),
-        h("p", { className: "rn-faint", style: { fontSize: 12, lineHeight: 1.7, marginTop: 8 } }, "会員さんのアプリには、ここで選んだメニューとトレーナーだけが表示されます。どちらも、最低1つは選ぶ必要があります。"),
+        GYMS.map((g) => {
+            const list = g.id === GYM.id ? trainers : (others[g.id] || []), okG = member.okTr && member.okTr[g.id], on = Array.isArray(okG) ? okG : list.map((x) => x.id);
+            return h("div", { key: g.id }, h("div", { className: "rn-muted", style: { fontSize: 12, margin: "16px 0 6px" } }, `予約できるトレーナー(${g.name})`),
+                list.length ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, list.map((x) => perm(on.includes(x.id), x.name, () => toggleTr(g.id, list, on, x.id), x.id))) : h("p", { className: "rn-faint", style: { fontSize: 12, margin: 0 } }, "トレーナーが登録されていません。"));
+        }),
+        h("p", { className: "rn-faint", style: { fontSize: 12, lineHeight: 1.7, marginTop: 8 } }, "会員さんのアプリには、ここで選んだメニューとトレーナーだけが表示されます。ジムのトレーナーをすべてオフにすると、その会員さんは、そのジムでは予約できません。メニューは、最低1つ選んでおく必要があります。"),
         h("h2", { className: "rv-h" }, "履歴"),
         log.length ? log.map((x, i) => h("div", { key: i, className: "rn-row", style: { display: "flex", gap: 12, alignItems: "center", padding: "12px 16px", marginBottom: 6, fontSize: 14 } },
             h("span", { className: "rn-muted", style: { minWidth: 78 } }, x.d.slice(5).replace("-", "/")), h("b", { style: { minWidth: 36, color: x.v > 0 ? "#16a34a" : "#c0392b" } }, (x.v > 0 ? "+" : "") + x.v), h("span", { style: { flex: 1 } }, x.note))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "まだ履歴がありません。"));
