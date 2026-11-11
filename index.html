@@ -724,7 +724,7 @@ function App() {
                     const past = memberRecords.filter((r) => r.exercise === exercise).sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
                     return past[0] || null;
                 }, onCancel: () => closeForm(setFormState), onSave: (...a) => { setFromView(null); return saveRecord(...a); } })))),
-        selectedMember && memberSection === "tickets" && h(TicketView, { member: selectedMember, onBack: () => setMemberSection(null), onChange: (n, note) => setTickets(selectedMember.id, n, note), onTrial: (n, note) => setTrial(selectedMember.id, n, note) }),
+        selectedMember && memberSection === "tickets" && h(TicketView, { member: selectedMember, trainers, onPerm: (patch) => persistMembers(members.map((m) => (m.id === selectedMember.id ? { ...m, ...patch } : m))), onBack: () => setMemberSection(null), onChange: (n, note) => setTickets(selectedMember.id, n, note), onTrial: (n, note) => setTrial(selectedMember.id, n, note) }),
         selectedMember && memberSection === "body" && (React.createElement("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 24 } },
                 React.createElement("button", { onClick: () => setMemberSection(null), className: "rn-icon-btn-lg", "aria-label": "\u623B\u308B" },
@@ -758,6 +758,7 @@ const slotDate = (date, hr) => { const d = new Date(`${date}T00:00:00`); d.setMi
 const tmTok = (x) => `${pad(Math.floor(x))}${x % 1 ? ".5" : ""}`; // 20.5 -> "20.5"
 const fmtH = (x) => `${Math.floor(x)}:${x % 1 ? "30" : "00"}`;
 const MENU_LEN = { p50: 1, pair70: 1.5 }; // 予約が押さえる長さ(時間)
+const MENUS = { p50: "50分パーソナル", pair70: "70分ペアトレーニング" };
 const lenOf = (v) => ((v && v.ln) || 60) / 60;
 const ST = { booked: "予約", done: "受講済み", noshow: "当日キャンセル" };
 const stOf = (r) => r.st || "booked";
@@ -1169,8 +1170,13 @@ function busyFor(docs, ds, hr, t, rules) { return busyAt(docs, ds, hr, 1, t, rul
 const menuCard = (ic, title, sub, fn) => h("button", { onClick: fn, className: "rn-row", style: { display: "flex", alignItems: "center", gap: 16, padding: "24px 20px", textAlign: "left", border: "1px solid var(--rn-border)", cursor: "pointer" } },
     h("span", { className: "rn-avatar", style: { width: 44, height: 44, fontSize: 20 } }, ic),
     h("span", null, h("span", { style: { display: "block", fontSize: 16, marginBottom: 2 } }, title), h("span", { className: "rn-muted", style: { display: "block", fontSize: 14 } }, sub)));
-function TicketView({ member, onBack, onChange, onTrial }) {
+function TicketView({ member, trainers, onBack, onChange, onTrial, onPerm }) {
     const [n, setN] = useState(8), [note, setNote] = useState(""), [to, setTo] = useState("");
+    const allM = Object.keys(MENUS), menusOn = member.menus && member.menus.length ? member.menus : allM;
+    const allT = trainers.map((x) => x.id), okT = member.okTr && member.okTr[GYM.id], trOn = okT && okT.length ? okT.filter((id) => allT.includes(id)) : allT;
+    const perm = (on, label, fn, key) => h("button", { key, onClick: fn, style: { padding: "10px 14px", borderRadius: 8, border: on ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: on ? "#2f54eb" : "var(--rn-card)", color: on ? "#fff" : "var(--rn-text)", font: "inherit", fontSize: 14, cursor: "pointer" } }, label);
+    const toggleMenu = (k) => { const nx = menusOn.includes(k) ? menusOn.filter((x) => x !== k) : [...menusOn, k]; if (!nx.length) return; onPerm({ menus: nx.length === allM.length ? null : nx }); };
+    const toggleTr = (id) => { const nx = trOn.includes(id) ? trOn.filter((x) => x !== id) : [...trOn, id]; if (!nx.length) return; onPerm({ okTr: { ...(member.okTr || {}), [GYM.id]: nx.length === allT.length ? null : nx } }); };
     const cur = member.tickets, log = member.tlog || [];
     const chip = (v) => h("button", { key: v, onClick: () => setN(v), style: { padding: "8px 14px", borderRadius: 8, border: n === v ? "1px solid #2f54eb" : "1px solid var(--rn-border)", background: n === v ? "#2f54eb" : "var(--rn-card)", color: n === v ? "#fff" : "var(--rn-text)", font: "inherit", cursor: "pointer" } }, v + "枚");
     return h("div", { style: { maxWidth: 640, margin: "0 auto" }, className: "rn-pad" },
@@ -1193,6 +1199,12 @@ function TicketView({ member, onBack, onChange, onTrial }) {
         h("div", { style: { display: "flex", gap: 8 } },
             h("input", { type: "number", min: 0, value: to, onChange: (e) => setTo(e.target.value), placeholder: "枚数を直接指定", className: "rn-field-input" }),
             h("button", { className: "rn-btn-outline", style: { width: "auto", padding: "0 20px", whiteSpace: "nowrap" }, onClick: () => { if (to !== "") { onChange(+to, "調整(直接指定)"); setTo(""); } } }, "設定")),
+        h("h2", { className: "rv-h" }, "予約の設定"),
+        h("div", { className: "rn-muted", style: { fontSize: 12, margin: "0 0 6px" } }, "予約できるメニュー"),
+        h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, allM.map((k) => perm(menusOn.includes(k), MENUS[k], () => toggleMenu(k), k))),
+        h("div", { className: "rn-muted", style: { fontSize: 12, margin: "16px 0 6px" } }, `予約できるトレーナー(${GYM.name})`),
+        h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => perm(trOn.includes(x.id), x.name, () => toggleTr(x.id), x.id))),
+        h("p", { className: "rn-faint", style: { fontSize: 12, lineHeight: 1.7, marginTop: 8 } }, "会員さんのアプリには、ここで選んだメニューとトレーナーだけが表示されます。どちらも、最低1つは選ぶ必要があります。"),
         h("h2", { className: "rv-h" }, "履歴"),
         log.length ? log.map((x, i) => h("div", { key: i, className: "rn-row", style: { display: "flex", gap: 12, alignItems: "center", padding: "12px 16px", marginBottom: 6, fontSize: 14 } },
             h("span", { className: "rn-muted", style: { minWidth: 78 } }, x.d.slice(5).replace("-", "/")), h("b", { style: { minWidth: 36, color: x.v > 0 ? "#16a34a" : "#c0392b" } }, (x.v > 0 ? "+" : "") + x.v), h("span", { style: { flex: 1 } }, x.note))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "まだ履歴がありません。"));
