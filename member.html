@@ -477,10 +477,11 @@ function notify(gym, trainerId, subject, body) {
 }
 const MENUS = { p50: "50分パーソナル", pair70: "70分ペアトレーニング" };
 function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
-    const [g, setG] = useState(GYM.id);
-    const tlist = (gg) => { const all = trainersBy[gg] || [defT(gg)], ok = member.okTr && member.okTr[gg], f = ok && ok.length ? all.filter((x) => ok.includes(x.id)) : all; return f.length ? f : all; };
-    const first = (x) => tlist(x)[0].id;
-    const [tid, setTid] = useState(first(GYM.id));
+    const tlist = (gg) => { const all = trainersBy[gg] || [defT(gg)], ok = member.okTr && member.okTr[gg], f = Array.isArray(ok) ? all.filter((x) => ok.includes(x.id)) : all; return f; };
+    const first = (x) => (tlist(x)[0] || {}).id;
+    const gymsOk = GYMS.filter((gy) => tlist(gy.id).length);
+    const [g, setG] = useState((gymsOk.find((gy) => gy.id === GYM.id) || gymsOk[0] || { id: GYM.id }).id);
+    const [tid, setTid] = useState(first(g));
     const [ws, setWs] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
     const [chg, setChg] = useState(null), [busy, setBusy] = useState(false);
     const menusOk = member.menus && member.menus.length ? member.menus.filter((k) => MENUS[k]) : Object.keys(MENUS);
@@ -559,8 +560,8 @@ function ReserveView({ id, member, trainersBy, docsBy, fixedBy, reload }) {
             sm("変更", () => startChange(r)), sm("キャンセル", () => cancel(r), true))) : h("p", { className: "rn-faint", style: { fontWeight: 300 } }, "予約はありません。"),
         hd(chg ? "変更先を選んでください" : "新しく予約する"),
         chg && h("div", { className: "rn-row", style: { padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 13 } }, `いまの予約:${formatDateJP(chg.d)} ${fmtH(chg.hr)}`, sm("変更をやめる", () => setChg(null))),
-        !chg && tickets <= upcoming.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
-            h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, GYMS.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(所属店舗)" : ""))))),
+        !gymsOk.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, "現在、ご予約できるトレーナーが設定されていません。お手数ですが、トレーナーへご連絡ください。") : !chg && tickets <= upcoming.length ? h("p", { className: "rn-faint", style: { fontWeight: 300, lineHeight: 1.8 } }, tickets === 0 ? "残りチケットがありません。トレーナーにご相談ください。" : "残りチケットの枚数ぶん、すでに予約が入っています。") : h("div", null,
+            gymsOk.length > 1 && h("div", { style: { marginBottom: 12 } }, lb("店舗"), h("select", { className: "rn-select", value: g, onChange: (e) => switchG(e.target.value) }, gymsOk.map((x) => h("option", { key: x.id, value: x.id }, x.name + (x.id === GYM.id ? "(所属店舗)" : ""))))),
             trainers.length > 1 && h("div", { style: { marginBottom: 12 } }, lb("トレーナー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, trainers.map((x) => pill(tid === x.id, x.name, () => setTid(x.id), x.id)))),
             h("div", { style: { marginBottom: 12 } }, lb("メニュー"), h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, menusOk.map((k) => pill(menu === k, MENUS[k], () => setMenu(k), k)))),
             h("div", { style: { marginBottom: 12 } }, lb("備考(トレーナーへ伝えたいこと)"), h("div", { style: { display: "flex", gap: 8 } }, pill(!hasNote, "なし", () => setHasNote(false), "n0"), pill(hasNote, "あり", () => setHasNote(true), "n1")),
